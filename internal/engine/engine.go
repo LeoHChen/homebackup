@@ -22,6 +22,9 @@ import (
 	"github.com/LeoHChen/homebackup/internal/store"
 )
 
+// UploadExpiry is how long an unfinished upload session is kept.
+const UploadExpiry = 7 * 24 * time.Hour
+
 // ErrUnknownSource is returned for a source ID that is not registered.
 var ErrUnknownSource = errors.New("unknown source")
 
@@ -105,6 +108,14 @@ func sortInfos(s []SourceInfo) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// SourceType returns the configured type of a registered source.
+func (e *Engine) SourceType(id string) (string, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	r, ok := e.sources[id]
+	return r.typ, ok
 }
 
 // Trigger asks the scheduler to sync a source as soon as possible.
@@ -394,8 +405,22 @@ func (e *Engine) Janitor(ctx context.Context) error {
 			return err
 		}
 	}
-	if len(trashed)+len(expired) > 0 {
-		e.Log.Info("janitor", "purgedFiles", len(trashed), "purgedVersions", len(expired))
+	stale, err := e.Catalog.StaleUploads(ctx, now.Add(-UploadExpiry))
+	if err != nil {
+		return err
+	}
+	for _, u := range stale {
+		if u.TmpPath != "" {
+			if err := os.Remove(u.TmpPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		if err := e.Catalog.DeleteUpload(ctx, u.ID); err != nil {
+			return err
+		}
+	}
+	if len(trashed)+len(expired)+len(stale) > 0 {
+		e.Log.Info("janitor", "purgedFiles", len(trashed), "purgedVersions", len(expired), "staleUploads", len(stale))
 	}
 	return nil
 }

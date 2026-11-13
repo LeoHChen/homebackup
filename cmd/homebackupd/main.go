@@ -55,18 +55,27 @@ func run() error {
 		return fmt.Errorf("open store: %w", err)
 	}
 
-	switch args := flag.Args(); {
-	case len(args) == 0:
-	case args[0] == "auth" && len(args) == 2:
-		return runAuth(cfg, st.StateDir(), args[1])
-	default:
-		return fmt.Errorf("usage: homebackupd [-config file] [auth <source-id>]")
-	}
 	cat, err := catalog.Open(filepath.Join(st.StateDir(), "catalog.db"))
 	if err != nil {
 		return fmt.Errorf("open catalog: %w", err)
 	}
 	defer cat.Close()
+
+	switch args := flag.Args(); {
+	case len(args) == 0:
+	case args[0] == "auth" && len(args) == 2:
+		return runAuth(cfg, st.StateDir(), args[1])
+	case args[0] == "pair" && len(args) == 1:
+		code, err := cat.NewPairingCode(context.Background(), time.Now(), 10*time.Minute)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Pairing code: %s %s (valid for 10 minutes)\n", code[:3], code[3:])
+		fmt.Println("Enter it in the homebackup app on your iPhone or Mac.")
+		return nil
+	default:
+		return fmt.Errorf("usage: homebackupd [-config file] [auth <source-id> | pair]")
+	}
 
 	eng := engine.New(st, cat, cfg.Retention, log)
 	for _, sc := range cfg.Sources {
@@ -84,12 +93,11 @@ func run() error {
 		eng.Register(src, sc.Type, time.Duration(sc.Schedule))
 	}
 
-	// Until device pairing lands (step 2), a single token can be supplied via env.
-	var tokens api.StaticTokens
+	// Paired devices authenticate with their own tokens. HOMEBACKUP_TOKEN is an
+	// optional admin token for scripts and curl.
+	tokens := api.Authenticators{api.DeviceTokens{Catalog: cat}}
 	if t := os.Getenv("HOMEBACKUP_TOKEN"); t != "" {
-		tokens = append(tokens, t)
-	} else {
-		log.Warn("HOMEBACKUP_TOKEN not set: authenticated endpoints will reject all requests")
+		tokens = append(tokens, api.StaticTokens{t})
 	}
 
 	started := time.Now().UTC()

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
@@ -12,24 +13,51 @@ import (
 	"github.com/LeoHChen/homebackup/internal/engine"
 )
 
-// TokenChecker reports whether a bearer token belongs to a paired device.
-type TokenChecker interface {
-	Valid(token string) bool
+// Principal is the authenticated caller.
+type Principal struct {
+	// DeviceID is the paired device, or "" for the admin token.
+	DeviceID string
 }
 
-// StaticTokens is a TokenChecker backed by a fixed list. It is used until
-// device pairing is implemented in the catalog.
+// Authenticator maps a bearer token to a principal.
+type Authenticator interface {
+	Authenticate(ctx context.Context, token string) (Principal, bool)
+}
+
+// StaticTokens is an Authenticator backed by a fixed list of admin tokens
+// (HOMEBACKUP_TOKEN).
 type StaticTokens []string
 
-// Valid implements TokenChecker using constant-time comparison.
-func (s StaticTokens) Valid(token string) bool {
+// Authenticate implements Authenticator using constant-time comparison.
+func (s StaticTokens) Authenticate(_ context.Context, token string) (Principal, bool) {
 	ok := false
 	for _, t := range s {
 		if t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(token)) == 1 {
 			ok = true
 		}
 	}
-	return ok
+	return Principal{}, ok
+}
+
+// Authenticators tries each Authenticator in order.
+type Authenticators []Authenticator
+
+// Authenticate implements Authenticator.
+func (as Authenticators) Authenticate(ctx context.Context, token string) (Principal, bool) {
+	for _, a := range as {
+		if p, ok := a.Authenticate(ctx, token); ok {
+			return p, true
+		}
+	}
+	return Principal{}, false
+}
+
+type principalKey struct{}
+
+// PrincipalFrom returns the authenticated caller of a request.
+func PrincipalFrom(ctx context.Context) Principal {
+	p, _ := ctx.Value(principalKey{}).(Principal)
+	return p
 }
 
 // SourceStatus is the sync state of one source.
@@ -54,7 +82,7 @@ type StatusFunc func() Status
 // Server serves the HTTP API.
 type Server struct {
 	Version string
-	Tokens  TokenChecker
+	Tokens  Authenticator
 	Status  StatusFunc
 	Log     *slog.Logger
 	// Engine backs the sources, files, and trash endpoints. Optional.
@@ -87,12 +115,18 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || s.Tokens == nil || !s.Tokens.Valid(token) {
+		var p Principal
+		if ok && token != "" && s.Tokens != nil {
+			p, ok = s.Tokens.Authenticate(r.Context(), token)
+		} else {
+			ok = false
+		}
+		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="homebackup"`)
 			writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid device token")
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
 }
 

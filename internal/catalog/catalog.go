@@ -68,7 +68,7 @@ func Open(dbPath string) (*Catalog, error) {
 	}
 	// SQLite allows one writer; a single connection avoids SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + devicesSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
