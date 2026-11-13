@@ -45,6 +45,9 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"unknown field":  {`{"root":"/d","bogus":1}`, "unknown field"},
 		"bad duration":   {`{"root":"/d","sources":[{"id":"a","type":"gdrive","schedule":"soon"}]}`, "invalid duration"},
 		"negative trash": {`{"root":"/d","retention":{"trashDays":-1}}`, "must not be negative"},
+		"bad tls mode":   {`{"root":"/d","tls":{"mode":"magic"}}`, "unknown tls mode"},
+		"files no cert":  {`{"root":"/d","tls":{"mode":"files"}}`, "needs certFile"},
+		"bad listen":     {`{"root":"/d","listen":"8420"}`, "listen"},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -53,5 +56,29 @@ func TestLoadRejectsInvalid(t *testing.T) {
 				t.Fatalf("err = %v, want containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestTLSAndBonjourDefaults(t *testing.T) {
+	no := false
+	for _, tc := range []struct {
+		cfg     Config
+		tls     string
+		bonjour bool
+	}{
+		{Config{Listen: "127.0.0.1:8420"}, "off", false},
+		{Config{Listen: "localhost:8420"}, "off", false},
+		{Config{Listen: "[::1]:8420"}, "off", false},
+		{Config{Listen: ":8420"}, "self-signed", true},
+		{Config{Listen: "192.168.1.5:8420"}, "self-signed", true},
+		{Config{Listen: ":8420", TLS: TLS{Mode: "off"}, Bonjour: &no}, "off", false},
+		{Config{Listen: "127.0.0.1:8420", TLS: TLS{Mode: "files"}}, "files", false},
+	} {
+		if got := tc.cfg.TLSMode(); got != tc.tls {
+			t.Errorf("%s: TLSMode = %s, want %s", tc.cfg.Listen, got, tc.tls)
+		}
+		if got := tc.cfg.BonjourEnabled(); got != tc.bonjour {
+			t.Errorf("%s: BonjourEnabled = %v, want %v", tc.cfg.Listen, got, tc.bonjour)
+		}
 	}
 }

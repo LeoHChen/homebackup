@@ -3,26 +3,32 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/LeoHChen/homebackup/internal/api"
 	"github.com/LeoHChen/homebackup/internal/catalog"
 	"github.com/LeoHChen/homebackup/internal/config"
+	"github.com/LeoHChen/homebackup/internal/discovery"
 	"github.com/LeoHChen/homebackup/internal/engine"
 	"github.com/LeoHChen/homebackup/internal/sources"
 	"github.com/LeoHChen/homebackup/internal/sources/gdrive"
 	"github.com/LeoHChen/homebackup/internal/store"
+	"github.com/LeoHChen/homebackup/internal/tlsutil"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -71,7 +77,13 @@ func run() error {
 			return err
 		}
 		fmt.Printf("Pairing code: %s %s (valid for 10 minutes)\n", code[:3], code[3:])
-		fmt.Println("Enter it in the homebackup app on your iPhone or Mac.")
+		if cert, err := loadCert(cfg, st.StateDir()); err != nil {
+			return err
+		} else if cert != nil {
+			fmt.Printf("Server key:   %s\n", tlsutil.ShortFingerprint(tlsutil.Fingerprint(*cert)))
+			fmt.Println("Check that the app shows the same server key before you confirm.")
+		}
+		fmt.Println("Enter the code in the homebackup app on your iPhone or Mac.")
 		return nil
 	default:
 		return fmt.Errorf("usage: homebackupd [-config file] [auth <source-id> | pair]")
@@ -100,12 +112,22 @@ func run() error {
 		tokens = append(tokens, api.StaticTokens{t})
 	}
 
+	cert, err := loadCert(cfg, st.StateDir())
+	if err != nil {
+		return err
+	}
+	fingerprint := ""
+	if cert != nil {
+		fingerprint = tlsutil.Fingerprint(*cert)
+	}
+
 	started := time.Now().UTC()
 	srv := &api.Server{
-		Version: version,
-		Tokens:  tokens,
-		Log:     log,
-		Engine:  eng,
+		Version:         version,
+		CertFingerprint: fingerprint,
+		Tokens:          tokens,
+		Log:             log,
+		Engine:          eng,
 		Status: func() api.Status {
 			s := api.Status{Version: version, Started: started, Root: st.Root()}
 			infos, err := eng.Sources(context.Background())
@@ -126,6 +148,9 @@ func run() error {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	if cert != nil {
+		httpSrv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS12}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -137,10 +162,31 @@ func run() error {
 	}()
 	defer func() { <-engDone }()
 
+	if cfg.BonjourEnabled() {
+		if _, portStr, err := net.SplitHostPort(cfg.Listen); err == nil {
+			port, _ := strconv.Atoi(portStr)
+			host, _ := os.Hostname()
+			txt := []string{"v=1", "tls=" + strconv.FormatBool(cert != nil)}
+			if fingerprint != "" {
+				txt = append(txt, "fp="+fingerprint)
+			}
+			go discovery.Advertise(ctx, "homebackup on "+strings.TrimSuffix(host, ".local"), port, txt, log)
+		}
+	}
+
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.Listen, "root", cfg.Root, "version", version)
-		errc <- httpSrv.ListenAndServe()
+		scheme := "http"
+		if cert != nil {
+			scheme = "https"
+		}
+		log.Info("listening", "addr", cfg.Listen, "scheme", scheme, "root", cfg.Root, "version", version)
+		if cert != nil {
+			log.Info("server key", "fingerprint", tlsutil.ShortFingerprint(fingerprint))
+			errc <- httpSrv.ListenAndServeTLS("", "")
+		} else {
+			errc <- httpSrv.ListenAndServe()
+		}
 	}()
 
 	select {
@@ -208,4 +254,24 @@ func openBrowser(u string) {
 		cmd = exec.Command("xdg-open", u)
 	}
 	_ = cmd.Start()
+}
+
+// loadCert returns the TLS certificate to serve, or nil for plain HTTP.
+func loadCert(cfg config.Config, stateDir string) (*tls.Certificate, error) {
+	var (
+		cert tls.Certificate
+		err  error
+	)
+	switch cfg.TLSMode() {
+	case "off":
+		return nil, nil
+	case "files":
+		cert, err = tlsutil.Load(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	default:
+		cert, err = tlsutil.LoadOrCreateSelfSigned(filepath.Join(stateDir, "tls"), time.Now())
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tls certificate: %w", err)
+	}
+	return &cert, nil
 }

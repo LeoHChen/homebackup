@@ -82,9 +82,12 @@ type StatusFunc func() Status
 // Server serves the HTTP API.
 type Server struct {
 	Version string
-	Tokens  Authenticator
-	Status  StatusFunc
-	Log     *slog.Logger
+	// CertFingerprint is the SHA-256 of the server's TLS public key, which
+	// apps pin at pairing time. Empty when serving plain HTTP.
+	CertFingerprint string
+	Tokens          Authenticator
+	Status          StatusFunc
+	Log             *slog.Logger
 	// Engine backs the sources, files, and trash endpoints. Optional.
 	Engine *engine.Engine
 }
@@ -101,7 +104,11 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
+	body := map[string]string{"status": "ok", "version": s.Version}
+	if s.CertFingerprint != "" {
+		body["certFingerprint"] = s.CertFingerprint
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) status(w http.ResponseWriter, _ *http.Request) {

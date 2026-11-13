@@ -25,7 +25,7 @@ make test
 ```sh
 cp homebackup.example.json homebackup.json   # edit "root"
 ./bin/homebackupd-darwin-arm64 -config homebackup.json
-curl http://localhost:8420/api/v1/health
+curl -k https://localhost:8420/api/v1/health   # -k: self-signed certificate
 ```
 
 ### Pair a device
@@ -63,8 +63,20 @@ The server refuses to start if the backup root is missing, so an unplugged
 external drive never causes backups to fill the internal disk; launchd
 retries every minute until the drive is back.
 
-Keep `"listen": "127.0.0.1:8420"` until you need other devices to connect;
-then switch to `":8420"` (HTTPS for remote access is planned).
+### Network access and HTTPS
+
+- `"listen": "127.0.0.1:8420"` accepts connections only from the server itself
+  (plain HTTP).
+- `"listen": ":8420"` opens it to your home network. HTTPS is then turned on
+  automatically with a self-signed certificate created on first start
+  (`<root>/state/tls/`), and the server advertises itself over Bonjour
+  (`_homebackup._tcp`) so the apps find it.
+- Apps trust the server by pinning its key. `homebackupd pair` prints the
+  pairing code and the server key (e.g. `28C5 EC7D 3379 0AD9`); the app shows
+  the key it sees, and you confirm they match.
+- To use another certificate (for example from `tailscale cert`), set
+  `"tls": {"mode": "files", "certFile": "...", "keyFile": "..."}`. Set
+  `"bonjour": false` to turn off discovery.
 
 ## Google Drive setup
 
