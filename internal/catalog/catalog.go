@@ -300,6 +300,14 @@ func upperBound(prefix string) string {
 	return prefix[:len(prefix)-1] + "0"
 }
 
+// LiveFilesUnder returns live files whose path is under dir (dir must be non-empty).
+func (c *Catalog) LiveFilesUnder(ctx context.Context, source, dir string) ([]File, error) {
+	prefix := strings.Trim(dir, "/") + "/"
+	return c.queryFiles(ctx, `SELECT `+fileCols+` FROM files
+		WHERE source = ? AND deleted_at IS NULL AND path >= ? AND path < ? ORDER BY path`,
+		source, prefix, upperBound(prefix))
+}
+
 // ListTrash returns deleted files, most recently deleted first.
 func (c *Catalog) ListTrash(ctx context.Context, source string) ([]File, error) {
 	q := `SELECT ` + fileCols + ` FROM files WHERE deleted_at IS NOT NULL`

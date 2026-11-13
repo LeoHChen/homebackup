@@ -4,11 +4,15 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,8 +25,8 @@ import (
 // ErrUnknownSource is returned for a source ID that is not registered.
 var ErrUnknownSource = errors.New("unknown source")
 
-// ErrPathConflict is returned when two different source items map to the same
-// path. Sources must make paths unique (e.g. Drive allows duplicate names).
+// ErrPathConflict is returned when an item's path and its disambiguated
+// alternative are both used by other items.
 var ErrPathConflict = errors.New("path used by another item")
 
 // ErrBusy is returned when a sync of the same source is already running.
@@ -160,6 +164,10 @@ func (e *Engine) Sync(ctx context.Context, id string) (err error) {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
+				if errors.Is(err, source.ErrPermanent) {
+					e.Log.Warn("skipping item", "source", id, "path", ch.Item.Path, "err", err)
+					continue
+				}
 				failed++
 				e.Log.Error("apply change", "source", id, "path", ch.Item.Path, "err", err)
 				continue
@@ -188,9 +196,73 @@ func (e *Engine) apply(ctx context.Context, src source.Source, ch source.Change)
 		return e.applyDelete(ctx, src.ID(), ch.Item)
 	case source.Upserted:
 		return e.applyUpsert(ctx, src, ch.Item)
+	case source.DeletedTree:
+		return e.applyTree(ctx, src.ID(), ch.Item.Path, func(f catalog.File) error {
+			return e.applyDelete(ctx, src.ID(), source.Item{SourceID: f.SourceItemID})
+		})
+	case source.MovedTree:
+		if ch.OldPath == "" || ch.OldPath == ch.Item.Path {
+			return nil
+		}
+		return e.applyTree(ctx, src.ID(), ch.OldPath, func(f catalog.File) error {
+			to := strings.Trim(ch.Item.Path, "/") + strings.TrimPrefix(f.Path, strings.Trim(ch.OldPath, "/"))
+			target, err := e.resolvePath(ctx, src.ID(), f.SourceItemID, to)
+			if err != nil {
+				return err
+			}
+			if err := e.Store.Move(src.ID(), f.Path, target); err != nil {
+				return err
+			}
+			return e.Catalog.MoveFile(ctx, f.ID, target)
+		})
 	default:
 		return fmt.Errorf("unknown change kind %d", ch.Kind)
 	}
+}
+
+func (e *Engine) applyTree(ctx context.Context, sourceID, dir string, fn func(catalog.File) error) error {
+	if strings.Trim(dir, "/") == "" {
+		return fmt.Errorf("refusing tree change on the source root")
+	}
+	files, err := e.Catalog.LiveFilesUnder(ctx, sourceID, dir)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, f := range files {
+		if err := fn(f); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", f.Path, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// resolvePath returns the path to store an item at: want itself if it is free
+// or already used by this item, otherwise a stable disambiguated name.
+func (e *Engine) resolvePath(ctx context.Context, sourceID, itemID, want string) (string, error) {
+	for _, p := range []string{want, disambiguate(want, itemID)} {
+		other, err := e.Catalog.LiveFileByPath(ctx, sourceID, p)
+		if errors.Is(err, catalog.ErrNotFound) || (err == nil && other.SourceItemID == itemID) {
+			return p, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("%w: %s", ErrPathConflict, want)
+}
+
+// disambiguate inserts a short, stable hash of the item ID before the extension:
+// "dir/report.pdf" -> "dir/report~1a2b3c4d.pdf".
+func disambiguate(p, itemID string) string {
+	h := sha256.Sum256([]byte(itemID))
+	tag := "~" + hex.EncodeToString(h[:4])
+	dir, name := path.Split(p)
+	ext := path.Ext(name)
+	if ext == name { // dotfile like ".env"
+		ext = ""
+	}
+	return dir + strings.TrimSuffix(name, ext) + tag + ext
 }
 
 func (e *Engine) applyDelete(ctx context.Context, sourceID string, it source.Item) error {
@@ -216,6 +288,9 @@ func (e *Engine) applyUpsert(ctx context.Context, src source.Source, it source.I
 	old, err := e.Catalog.FileBySourceItem(ctx, src.ID(), it.SourceID)
 	known := err == nil && old.DeletedAt == nil
 	if err != nil && !errors.Is(err, catalog.ErrNotFound) {
+		return err
+	}
+	if it.Path, err = e.resolvePath(ctx, src.ID(), it.SourceID, it.Path); err != nil {
 		return err
 	}
 	if known && unchanged(old, it) {
@@ -244,11 +319,11 @@ func (e *Engine) applyUpsert(ctx context.Context, src source.Source, it source.I
 // Put stores content for an item and records it in the catalog. It is used by
 // pull sources and by push uploads (e.g. the iPhone app).
 func (e *Engine) Put(ctx context.Context, sourceID string, it source.Item, r io.Reader) error {
-	if other, err := e.Catalog.LiveFileByPath(ctx, sourceID, it.Path); err == nil && other.SourceItemID != it.SourceID {
-		return fmt.Errorf("%w: %s is already used by item %s", ErrPathConflict, it.Path, other.SourceItemID)
-	} else if err != nil && !errors.Is(err, catalog.ErrNotFound) {
+	p, err := e.resolvePath(ctx, sourceID, it.SourceID, it.Path)
+	if err != nil {
 		return err
 	}
+	it.Path = p
 	res, err := e.Store.Put(sourceID, it.Path, r)
 	if err != nil {
 		return err

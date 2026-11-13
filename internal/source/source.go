@@ -4,6 +4,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -16,7 +17,17 @@ const (
 	Upserted ChangeKind = iota
 	// Deleted means the item was removed at the source.
 	Deleted
+	// DeletedTree means a folder was removed: every item under Item.Path is deleted.
+	DeletedTree
+	// MovedTree means a folder was renamed or moved from OldPath to Item.Path:
+	// every item under OldPath moves with it.
+	MovedTree
 )
+
+// ErrPermanent marks an Open error that will not go away on retry (e.g. the
+// file is too large to export). The engine skips such items instead of
+// retrying them forever.
+var ErrPermanent = errors.New("permanent failure")
 
 // Item is one file known to a source.
 type Item struct {
@@ -24,7 +35,8 @@ type Item struct {
 	// (e.g. a Drive file ID). It must not change when the item is renamed.
 	SourceID string
 	// Path is the item's path relative to the source root, using '/'.
-	// It must be unique among the source's live items.
+	// If two live items share a path, the engine stores the later one under a
+	// disambiguated name (e.g. "report~1a2b3c.pdf").
 	Path     string
 	Size     int64
 	Modified time.Time
@@ -36,6 +48,8 @@ type Item struct {
 type Change struct {
 	Kind ChangeKind
 	Item Item
+	// OldPath is set for MovedTree.
+	OldPath string
 }
 
 // ChangeSet is a batch of changes plus the cursor to resume from.

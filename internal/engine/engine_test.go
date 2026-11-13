@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ type fakeSource struct {
 	content  map[string]string // SourceID -> content
 	opens    int
 	failOpen string
+	failErr  error
 }
 
 func (f *fakeSource) ID() string { return "fake" }
@@ -40,6 +42,9 @@ func (f *fakeSource) Changes(_ context.Context, cursor string) (source.ChangeSet
 
 func (f *fakeSource) Open(_ context.Context, it source.Item) (io.ReadCloser, error) {
 	if it.SourceID == f.failOpen {
+		if f.failErr != nil {
+			return nil, f.failErr
+		}
 		return nil, errors.New("network down")
 	}
 	f.opens++
@@ -174,13 +179,61 @@ func TestFailedChangeKeepsCursor(t *testing.T) {
 	}
 }
 
-func TestPathConflict(t *testing.T) {
+func TestDuplicatePathsAreDisambiguated(t *testing.T) {
 	v := newEnv(t)
 	v.src.content["1"], v.src.content["2"] = "a", "b"
-	v.src.batches = [][]source.Change{{up("1", "same.txt", "c1"), up("2", "same.txt", "c2")}}
-	err := v.e.Sync(context.Background(), "fake")
-	if err == nil || v.current(t, "same.txt") != "a" {
-		t.Fatalf("second item must not overwrite the first: err=%v", err)
+	v.sync(t, []source.Change{up("1", "dir/same.txt", "c1"), up("2", "dir/same.txt", "c2")})
+	alt := disambiguate("dir/same.txt", "2")
+	if v.current(t, "dir/same.txt") != "a" || v.current(t, alt) != "b" {
+		t.Fatal("duplicate names must both be kept")
+	}
+	// Re-syncing the second item is stable: no move, no re-download.
+	opens := v.src.opens
+	v.sync(t, []source.Change{up("2", "dir/same.txt", "c2")})
+	if v.src.opens != opens || v.current(t, alt) != "b" {
+		t.Fatal("disambiguated path must be stable")
+	}
+	if got := disambiguate("a/.env", "x"); !strings.HasPrefix(got, "a/.env~") {
+		t.Errorf("dotfile disambiguation = %s", got)
+	}
+}
+
+func TestTreeChanges(t *testing.T) {
+	v := newEnv(t)
+	ctx := context.Background()
+	v.src.content["1"], v.src.content["2"], v.src.content["3"] = "a", "b", "c"
+	v.sync(t, []source.Change{up("1", "docs/a", "c1"), up("2", "docs/sub/b", "c2"), up("3", "docs2/c", "c3")})
+
+	opens := v.src.opens
+	v.sync(t, []source.Change{{Kind: source.MovedTree, OldPath: "docs", Item: source.Item{Path: "archive/docs"}}})
+	if v.src.opens != opens || v.current(t, "archive/docs/a") != "a" || v.current(t, "archive/docs/sub/b") != "b" {
+		t.Fatal("folder move should move descendants without downloading")
+	}
+	if v.current(t, "docs2/c") != "c" {
+		t.Fatal("sibling folder with shared prefix must not move")
+	}
+
+	v.sync(t, []source.Change{{Kind: source.DeletedTree, Item: source.Item{Path: "archive"}}})
+	if tr, _ := v.e.Catalog.ListTrash(ctx, "fake"); len(tr) != 2 {
+		t.Fatalf("trash = %+v", tr)
+	}
+	if es, _ := v.e.Catalog.ListDir(ctx, "fake", ""); len(es) != 1 || es[0].Name != "docs2" {
+		t.Fatalf("listing = %+v", es)
+	}
+	v.src.batches = append(v.src.batches, []source.Change{{Kind: source.DeletedTree, Item: source.Item{Path: "/"}}})
+	if err := v.e.Sync(ctx, "fake"); err == nil {
+		t.Fatal("deleting the root must be refused")
+	}
+}
+
+func TestPermanentErrorSkipsItem(t *testing.T) {
+	v := newEnv(t)
+	v.src.failOpen = "2"
+	v.src.failErr = fmt.Errorf("too big: %w", source.ErrPermanent)
+	v.src.content["1"] = "x"
+	v.sync(t, []source.Change{up("1", "a", "c1"), up("2", "b", "c2")})
+	if st, _ := v.e.Catalog.SourceState(context.Background(), "fake"); st.Cursor != "1" {
+		t.Fatalf("cursor should advance past permanent failures: %+v", st)
 	}
 }
 
