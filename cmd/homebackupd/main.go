@@ -7,6 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	stdlog "log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,11 +27,13 @@ import (
 	"github.com/LeoHChen/homebackup/internal/config"
 	"github.com/LeoHChen/homebackup/internal/discovery"
 	"github.com/LeoHChen/homebackup/internal/engine"
+	"github.com/LeoHChen/homebackup/internal/logbuf"
 	"github.com/LeoHChen/homebackup/internal/sources"
 	"github.com/LeoHChen/homebackup/internal/sources/gdrive"
 	"github.com/LeoHChen/homebackup/internal/store"
 	"github.com/LeoHChen/homebackup/internal/thumbs"
 	"github.com/LeoHChen/homebackup/internal/tlsutil"
+	"github.com/LeoHChen/homebackup/internal/web"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -52,7 +56,11 @@ func run() error {
 		return nil
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// Recent log lines are kept in memory for the dashboard (GET /api/v1/log).
+	recent := logbuf.New(2000)
+	logOut := io.MultiWriter(os.Stderr, recent)
+	log := slog.New(slog.NewTextHandler(logOut, nil))
+	stdlog.SetOutput(logOut) // net/http reports TLS handshake errors here
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err
@@ -84,7 +92,9 @@ func run() error {
 			fmt.Printf("Server key:   %s\n", tlsutil.ShortFingerprint(tlsutil.Fingerprint(*cert)))
 			fmt.Println("Check that the app shows the same server key before you confirm.")
 		}
-		fmt.Println("Enter the code in the homebackup app on your iPhone or Mac.")
+		fmt.Println("Enter the code in the homebackup app on your iPhone or Mac, or in the")
+		fmt.Printf("dashboard at %s to pair a web browser.\n", dashboardURL(cfg, cfg.TLSMode() != "off"))
+		fmt.Println("Once one device is paired, it can issue codes for the others.")
 		return nil
 	default:
 		return fmt.Errorf("usage: homebackupd [-config file] [auth <source-id> | pair]")
@@ -126,23 +136,56 @@ func run() error {
 	log.Info("thumbnails", "tools", thumbGen.Tools())
 
 	started := time.Now().UTC()
+	hostname, _ := os.Hostname()
+	hostname = strings.TrimSuffix(hostname, ".local")
+	sourceOptions := map[string]map[string]string{}
+	for _, sc := range cfg.Sources {
+		sourceOptions[sc.ID] = sc.Options
+	}
 	srv := &api.Server{
 		Version:         version,
 		CertFingerprint: fingerprint,
 		Tokens:          tokens,
 		Log:             log,
+		Logs:            recent,
 		Engine:          eng,
 		Thumbs:          thumbGen,
+		UI:              web.Handler(),
 		Status: func() api.Status {
-			s := api.Status{Version: version, Started: started, Root: st.Root()}
-			infos, err := eng.Sources(context.Background())
+			s := api.Status{
+				Version: version, Started: started, Hostname: hostname, Listen: cfg.Listen,
+				TLS: cert != nil, Bonjour: cfg.BonjourEnabled(), Root: st.Root(),
+				Retention: &api.Retention{
+					TrashDays: cfg.Retention.TrashDays, VersionDays: cfg.Retention.VersionDays, MaxVersions: cfg.Retention.MaxVersions,
+				},
+			}
+			if du, err := st.DiskUsage(); err == nil {
+				s.Disk = &api.Disk{Total: du.Total, Free: du.Free, Used: du.Used()}
+			}
+			ctx := context.Background()
+			if devs, err := cat.ListDevices(ctx); err == nil {
+				s.Devices = len(devs)
+			}
+			totals, err := cat.SourceTotals(ctx)
+			if err != nil {
+				log.Error("status totals", "err", err)
+			}
+			infos, err := eng.Sources(ctx)
 			if err != nil {
 				log.Error("status", "err", err)
 			}
 			for _, in := range infos {
-				s.Sources = append(s.Sources, api.SourceStatus{
-					ID: in.ID, Type: in.Type, LastSync: in.State.LastSync, LastErr: in.State.LastError,
-				})
+				ss := api.SourceStatus{
+					ID: in.ID, Type: in.Type, Running: in.Running, LastSync: in.State.LastSync, LastErr: in.State.LastError,
+					Options: sourceOptions[in.ID],
+				}
+				if in.Schedule > 0 {
+					ss.Schedule = in.Schedule.String()
+				}
+				if t, ok := totals[in.ID]; ok {
+					ss.Files, ss.Bytes, ss.TrashedFiles, ss.TrashedBytes = t.Files, t.Bytes, t.TrashedFiles, t.TrashedBytes
+				}
+				s.Sources = append(s.Sources, ss)
 			}
 			return s
 		},
@@ -187,6 +230,7 @@ func run() error {
 			scheme = "https"
 		}
 		log.Info("listening", "addr", cfg.Listen, "scheme", scheme, "root", cfg.Root, "version", version)
+		log.Info("dashboard", "url", dashboardURL(cfg, cert != nil))
 		if cert != nil {
 			log.Info("server key", "fingerprint", tlsutil.ShortFingerprint(fingerprint))
 			errc <- httpSrv.ListenAndServeTLS("", "")
@@ -208,6 +252,24 @@ func run() error {
 		return httpSrv.Shutdown(shutdownCtx)
 	}
 	return nil
+}
+
+// dashboardURL is the address to open in a browser on the home network.
+func dashboardURL(cfg config.Config, tls bool) string {
+	scheme := "http"
+	if tls {
+		scheme = "https"
+	}
+	host, port, err := net.SplitHostPort(cfg.Listen)
+	if err != nil {
+		return scheme + "://" + cfg.Listen + "/"
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		h, _ := os.Hostname()
+		host = strings.TrimSuffix(h, ".local") + ".local"
+	}
+	return fmt.Sprintf("%s://%s/", scheme, net.JoinHostPort(host, port))
 }
 
 // runAuth signs a source in to its cloud account and saves the token.

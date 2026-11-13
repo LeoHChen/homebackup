@@ -100,6 +100,46 @@ public struct PairResult: Codable, Sendable {
     public var certFingerprint: String?
 }
 
+/// A pairing code issued for a new device (`POST /pair/codes`).
+public struct PairCode: Codable, Sendable {
+    public var code: String
+    public var expiresAt: Date
+    public var certFingerprint: String?
+
+    /// "482 913", as people read it.
+    public var formatted: String {
+        code.count == 6 ? "\(code.prefix(3)) \(code.suffix(3))" : code
+    }
+}
+
+/// A paired device (`GET /devices`).
+public struct Device: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var platform: String
+    public var created: Date
+    public var lastSeen: Date?
+}
+
+/// Space on the drive that holds the backup root.
+public struct DiskUsage: Codable, Hashable, Sendable {
+    public var total: UInt64
+    public var free: UInt64
+    public var used: UInt64
+
+    public var fractionUsed: Double { total == 0 ? 0 : Double(used) / Double(total) }
+}
+
+/// Server status (`GET /status`). Older servers omit most fields.
+public struct ServerStatus: Codable, Sendable {
+    public var version: String
+    public var started: Date?
+    public var hostname: String?
+    public var root: String
+    public var disk: DiskUsage?
+    public var devices: Int?
+}
+
 public struct Version: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var size: Int64

@@ -10,7 +10,7 @@ Claude Code session on that Mac.
 Fill these in for your server. Every later step uses these values.
 
 ```sh
-HB_VERSION=0.1.0                              # release to install
+HB_VERSION=0.2.0                              # release to install
 HB_SERVER=https://homeserver.local:8420       # server address: Bonjour host name or LAN IP, port from "listen"
 HB_SERVER_NAME="homebackup on homeserver"     # name the app lists for your server
 HB_KEY="XXXX XXXX XXXX XXXX"                  # server key, printed by `homebackupd pair` and in the server log
@@ -20,7 +20,9 @@ HB_ROOT=/path/to/backup/root                  # "root" in that config file
 
 - **Where to find them:** on the server, `homebackupd -config $HB_CONFIG pair`
   prints the server key. The server log shows the listen address and the
-  Bonjour name.
+  Bonjour name. If another device is already paired, it can show the key and
+  issue the code instead: Mac app → **Pair another device…**, or the
+  dashboard at `$HB_SERVER` → Devices → **Add a device**.
 - **If you use Claude Code:** paste this file after filling in the settings.
   Claude should run each block in one shell with the settings block first.
 
@@ -74,7 +76,9 @@ open /Applications/HomeBackup.app
 ## 4. Check that the app started
 
 - **Menu bar:** it is a menu bar app with no Dock icon. Look for the
-  external-drive icon at the top right of the screen.
+  external-drive icon at the top right of the screen. A question mark on the
+  icon means it is not paired yet; an exclamation mark means it needs
+  attention and the menu says why.
 - **Finder extension:** check that it is registered:
 
   ```sh
@@ -96,6 +100,15 @@ open /Applications/HomeBackup.app
 3. **Pick the server:** choose `$HB_SERVER_NAME`, or enter `$HB_SERVER`.
 4. **If macOS asks** to let the app find devices on the local network, click **Allow**.
 5. **Check the key and pair:** the app must show the server key `$HB_KEY`. Then enter the code and click **Pair**.
+6. **Allow Finder access:** macOS keeps new File Provider extensions off
+   until you allow them. If the menu shows **Finder can't show your files
+   yet**, click **Open System Settings…** and turn on HomeBackup under
+   **File Providers** (General → Login Items & Extensions on macOS 15 and
+   later). Until then Finder says *HomeBackup does not have permission to
+   open "HomeBackup-MyFiles"*, and `fileproviderctl dump` shows the domains
+   as `user-disabled`. There is no command that turns this on;
+   `pluginkit -e use -i com.github.leohchen.homebackup.mac.files` is not
+   enough.
 
 ## 6. Verify
 
@@ -111,7 +124,7 @@ open /Applications/HomeBackup.app
   3. Delete the folder in Finder. It moves to the server's trash.
 - **If the Finder locations don't appear:**
   - Open **System Settings → General → Login Items & Extensions → File
-    Providers** and make sure HomeBackup is enabled.
+    Providers** and make sure HomeBackup is enabled (see step 5.6).
   - Quit and reopen the app.
   - Collect the output of:
 
@@ -129,6 +142,13 @@ If an assistant followed this guide, it should report:
 - which sources appear in Finder
 - the round-trip result
 - any errors, with their exact text
+
+## Updating the app
+
+Replace `/Applications/HomeBackup.app` with the new build and open it. An
+app built from this version or later keeps its pairing across updates. Apps
+older than 0.2.0 stored their settings elsewhere, so after updating from
+0.1.0, pair the Mac again (menu → **Connect to your home server…**).
 
 ## Known limits
 

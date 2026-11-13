@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>HomeBackup</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="offline" class="banner hidden">Lost the connection to the server. Retrying…</div>
+
+<section id="signin" class="signin hidden">
+  <div class="signin-card">
+    <div class="brand"><img src="/static/icon.svg" alt="" width="36" height="36"><h1>HomeBackup</h1></div>
+    <p class="muted">Your home server, <span id="signin-host">…</span></p>
+    <p id="signin-msg" class="notice hidden"></p>
+
+    <div class="keybox">
+      <div class="label">Server key</div>
+      <div id="signin-key" class="mono big">…</div>
+      <div class="hint">Compare this with the key shown by <code>homebackupd pair</code> or by a paired HomeBackup app. Pair only if they match.</div>
+    </div>
+
+    <form id="pair-form" class="stack">
+      <label for="pair-code">Pairing code</label>
+      <input id="pair-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" maxlength="7" required>
+      <button type="submit" class="primary">Pair this browser</button>
+      <div class="hint">Get a code from a paired device (HomeBackup menu → <b>Pair another device…</b>) or run <code>homebackupd pair</code> on the server. Codes last 10 minutes.</div>
+      <div id="pair-error" class="error hidden"></div>
+    </form>
+
+    <details class="advanced">
+      <summary>Use an admin token instead</summary>
+      <form id="token-form" class="stack">
+        <input id="admin-token" type="password" placeholder="HOMEBACKUP_TOKEN value" autocomplete="off">
+        <button type="submit">Sign in with token</button>
+      </form>
+    </details>
+    <p class="hint small">Your browser may have warned that this connection isn't private. That is expected: the server uses its own key instead of a public certificate. The key above is how you check you reached the right server.</p>
+  </div>
+</section>
+
+<div id="shell" class="shell hidden">
+  <nav class="sidebar">
+    <div class="brand"><img src="/static/icon.svg" alt="" width="28" height="28"><div><div class="brand-name">HomeBackup</div><div id="nav-host" class="muted small">…</div></div></div>
+    <a href="#/overview" data-nav="overview">Overview</a>
+    <a href="#/files" data-nav="files">Files</a>
+    <a href="#/photos" data-nav="photos">Photos</a>
+    <a href="#/devices" data-nav="devices">Devices</a>
+    <a href="#/activity" data-nav="activity">Activity</a>
+    <a href="#/settings" data-nav="settings">Settings</a>
+    <div class="sidebar-foot muted small"><span id="nav-version"></span></div>
+  </nav>
+  <main id="main" class="main"></main>
+</div>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true"><div id="modal-card" class="modal-card"></div></div>
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -35,7 +35,10 @@ type DeviceJSON struct {
 	LastSeen *time.Time `json:"lastSeen,omitempty"`
 }
 
-var platforms = map[string]bool{"ios": true, "macos": true, "cli": true}
+var platforms = map[string]bool{"ios": true, "macos": true, "cli": true, "web": true}
+
+// pairCodeTTL is how long a pairing code stays valid.
+const pairCodeTTL = 10 * time.Minute
 
 // pairLimiter slows down guessing across all clients: at most one attempt
 // per second on average, bursting to 5.
@@ -64,6 +67,7 @@ func (l *pairLimiter) allow(now time.Time) bool {
 func (s *Server) deviceRoutes(mux *http.ServeMux) {
 	lim := &pairLimiter{}
 	mux.HandleFunc("POST /api/v1/pair", func(w http.ResponseWriter, r *http.Request) { s.pair(w, r, lim) })
+	mux.Handle("POST /api/v1/pair/codes", s.auth(http.HandlerFunc(s.newPairCode)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.listDevices)))
 	mux.Handle("DELETE /api/v1/devices/{id}", s.auth(http.HandlerFunc(s.deleteDevice)))
 }
@@ -85,7 +89,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request, lim *pairLimiter) 
 	}
 	req.DeviceName = strings.TrimSpace(req.DeviceName)
 	if req.DeviceName == "" || len(req.DeviceName) > 100 || !platforms[req.Platform] {
-		writeError(w, http.StatusBadRequest, "bad_request", "deviceName (1-100 chars) and platform (ios, macos, cli) are required")
+		writeError(w, http.StatusBadRequest, "bad_request", "deviceName (1-100 chars) and platform (ios, macos, web, cli) are required")
 		return
 	}
 	dev, token, err := s.Engine.Catalog.Pair(r.Context(), strings.ReplaceAll(req.Code, " ", ""), req.DeviceName, req.Platform, time.Now())
@@ -105,6 +109,29 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request, lim *pairLimiter) 
 		resp["certFingerprint"] = s.CertFingerprint
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// newPairCode lets an already paired device (or the dashboard) issue a
+// pairing code for a new device, so nobody needs a terminal on the server.
+func (s *Server) newPairCode(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	code, err := s.Engine.Catalog.NewPairingCode(r.Context(), now, pairCodeTTL)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if s.Log != nil {
+		s.Log.Info("pairing code issued", "by", PrincipalFrom(r.Context()).DeviceID)
+	}
+	resp := map[string]any{
+		"code":      code,
+		"expiresAt": now.Add(pairCodeTTL).UTC(),
+		"validFor":  int(pairCodeTTL.Seconds()),
+	}
+	if s.CertFingerprint != "" {
+		resp["certFingerprint"] = s.CertFingerprint
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +156,9 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.internalError(w, err)
 		return
+	}
+	if s.Log != nil {
+		s.Log.Info("device revoked", "id", r.PathValue("id"), "by", PrincipalFrom(r.Context()).DeviceID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

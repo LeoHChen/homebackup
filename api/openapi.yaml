@@ -3,9 +3,11 @@ info:
   title: homebackup API
   version: 0.1.0
   description: |
-    HTTP API of homebackupd, used by the iPhone and Mac apps and the CLI.
-    Devices pair with a 6-digit code from `homebackupd pair` and then send
-    their token as `Authorization: Bearer <token>`. Off-loopback the server
+    HTTP API of homebackupd, used by the iPhone and Mac apps, the web
+    dashboard served at `/`, and the CLI. Devices pair with a 6-digit code
+    (from `homebackupd pair`, or issued by an already paired device with
+    `POST /pair/codes`) and then send their token as
+    `Authorization: Bearer <token>`. Off-loopback the server
     uses HTTPS with a self-signed certificate; clients pin the SHA-256 of its
     public key (certFingerprint, also advertised over Bonjour as `fp=`).
 servers:
@@ -47,7 +49,7 @@ paths:
               properties:
                 code: { type: string, example: "482913" }
                 deviceName: { type: string, example: "Leo's iPhone" }
-                platform: { type: string, enum: [ios, macos, cli] }
+                platform: { type: string, enum: [ios, macos, web, cli] }
       responses:
         "200":
           description: Paired
@@ -62,6 +64,43 @@ paths:
         "400": { description: Invalid deviceName or platform }
         "401": { description: Invalid or expired pairing code }
         "429": { description: Too many pairing attempts; see Retry-After }
+  /pair/codes:
+    post:
+      summary: Issue a pairing code for a new device
+      description: |
+        Lets a paired device (or the dashboard) add another device without a
+        terminal on the server. The code is valid for 10 minutes, can be used
+        once, and replaces any earlier code.
+      responses:
+        "201":
+          description: Code issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, example: "482913" }
+                  expiresAt: { type: string, format: date-time }
+                  validFor: { type: integer, description: Seconds the code stays valid }
+                  certFingerprint: { type: string, description: The server key the new device must show }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /log:
+    get:
+      summary: Recent server log lines
+      description: The last lines the server logged, oldest first, for the dashboard's Activity page.
+      parameters:
+        - { name: n, in: query, schema: { type: integer, default: 200, minimum: 1, maximum: 2000 } }
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lines: { type: array, items: { type: string } }
+        "400": { description: n is not a positive number }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /status:
     get:
       summary: Server, disk, and source status
@@ -422,17 +461,40 @@ components:
       type: object
       properties:
         id: { type: string }
-        type: { type: string, enum: [gdrive, gphotos-takeout, device-upload, icloud-local] }
+        type: { type: string, enum: [gdrive, gphotos-takeout, device-upload, drive, icloud-local] }
         schedule: { type: string, example: 1h0m0s }
         running: { type: boolean }
         lastSync: { type: string, format: date-time }
         lastError: { type: string }
+        options: { type: object, additionalProperties: { type: string }, description: "Source options from the config file (status only)" }
+        files: { type: integer, format: int64, description: "Current files (status only)" }
+        bytes: { type: integer, format: int64, description: "Size of current files (status only)" }
+        trashedFiles: { type: integer, format: int64, description: "Files waiting in the trash (status only)" }
+        trashedBytes: { type: integer, format: int64 }
     Status:
       type: object
       properties:
         version: { type: string }
         started: { type: string, format: date-time }
+        hostname: { type: string }
+        listen: { type: string, example: ":8420" }
+        tls: { type: boolean }
+        bonjour: { type: boolean }
         root: { type: string }
+        disk:
+          type: object
+          description: Space on the volume holding the root, in bytes
+          properties:
+            total: { type: integer, format: int64 }
+            free: { type: integer, format: int64 }
+            used: { type: integer, format: int64 }
+        retention:
+          type: object
+          properties:
+            trashDays: { type: integer }
+            versionDays: { type: integer }
+            maxVersions: { type: integer }
+        devices: { type: integer, description: Number of paired devices }
         sources:
           type: array
           items: { $ref: "#/components/schemas/SourceStatus" }

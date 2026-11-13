@@ -46,6 +46,25 @@ public final class HomeBackupClient: @unchecked Sendable {
         try await get("sources")
     }
 
+    /// Server, disk, and source status.
+    public func status() async throws -> ServerStatus {
+        try await get("status")
+    }
+
+    /// Asks the server for a pairing code to enter on another device.
+    public func newPairCode() async throws -> PairCode {
+        try await send("POST", "pair/codes", body: [String: String]())
+    }
+
+    public func devices() async throws -> [Device] {
+        try await get("devices")
+    }
+
+    /// Signs a device out for good; it must pair again to reconnect.
+    public func revokeDevice(id: String) async throws {
+        try await sendNoContent("DELETE", "devices/\(escape(id))")
+    }
+
     public func syncNow(source: String) async throws {
         try await sendNoContent("POST", "sources/\(escape(source))/sync")
     }
