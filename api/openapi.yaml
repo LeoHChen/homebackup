@@ -218,6 +218,23 @@ paths:
         "200": { description: Content, content: { application/octet-stream: {} } }
         "206": { description: Partial content }
         "404": { $ref: "#/components/responses/NotFound" }
+  /files/{id}/thumbnail:
+    get:
+      summary: JPEG thumbnail of a photo or video
+      description: |
+        Files with a media field have thumbnails. Thumbnails are cached by
+        content, and small ones are made in the background after each sync.
+        HEIC, RAW, and video need sips/qlmanage (macOS), heif-convert, or
+        ffmpeg on the server. Use If-None-Match with the ETag to revalidate.
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+        - { name: size, in: query, schema: { type: string, enum: [small, large], default: small }, description: "small: 256 px, large: 1024 px on the longest side" }
+      responses:
+        "200": { description: Thumbnail, content: { image/jpeg: {} } }
+        "304": { description: Not modified }
+        "400": { description: Invalid size }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { description: No thumbnail for this file type (or the file cannot be decoded) }
   /files/{id}/versions:
     get:
       summary: Version history
@@ -431,6 +448,7 @@ components:
         modified: { type: string, format: date-time }
         sha256: { type: string }
         deletedAt: { type: string, format: date-time }
+        media: { type: string, enum: [photo, video], description: "Set for files that have a thumbnail" }
     Version:
       type: object
       properties:

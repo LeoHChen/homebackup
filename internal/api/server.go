@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LeoHChen/homebackup/internal/engine"
+	"github.com/LeoHChen/homebackup/internal/thumbs"
 )
 
 // Principal is the authenticated caller.
@@ -90,6 +91,8 @@ type Server struct {
 	Log             *slog.Logger
 	// Engine backs the sources, files, and trash endpoints. Optional.
 	Engine *engine.Engine
+	// Thumbs makes photo and video thumbnails. Optional.
+	Thumbs *thumbs.Generator
 }
 
 // Handler returns the root HTTP handler.
