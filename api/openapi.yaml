@@ -187,7 +187,7 @@ paths:
         the Photos app use it to stay in sync.
       parameters:
         - { name: source, in: query, required: true, schema: { type: string } }
-        - { name: cursor, in: query, schema: { type: string, default: "0" } }
+        - { name: cursor, in: query, schema: { type: string, default: "0" }, description: '"latest" returns the current cursor without changes' }
         - { name: limit, in: query, schema: { type: integer, default: 1000, maximum: 1000 } }
       responses:
         "200":
@@ -449,6 +449,7 @@ components:
         sha256: { type: string }
         deletedAt: { type: string, format: date-time }
         media: { type: string, enum: [photo, video], description: "Set for files that have a thumbnail" }
+        parentId: { type: string, description: "ID of the containing folder, if it has one (empty at the top level and under folders implied by file paths)" }
     Version:
       type: object
       properties:

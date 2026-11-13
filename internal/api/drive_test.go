@@ -110,6 +110,23 @@ func TestDriveAPI(t *testing.T) {
 		t.Fatalf("upload changes = %+v", all)
 	}
 
+	// Parent folder IDs, for File Provider.
+	_, b = e.req(t, "GET", "/api/v1/files?source=files&path=Work", token, nil, nil)
+	work := decode[struct{ Items []FileJSON }](t, b).Items
+	if len(work) != 1 || work[0].Path != "Work/Reports" || work[0].ParentID == "" || work[0].ID == "" {
+		t.Fatalf("Work listing = %s", b)
+	}
+	if all[0].File.ParentID != work[0].ID {
+		t.Fatalf("change parentId = %q, want %q", all[0].File.ParentID, work[0].ID)
+	}
+	_, b = e.req(t, "GET", "/api/v1/files/"+work[0].ID, token, nil, nil)
+	if got := decode[FileJSON](t, b); got.ParentID != work[0].ParentID {
+		t.Fatalf("folder parentId = %s", b)
+	}
+	if p := changes("latest"); len(p.Changes) != 0 || p.Cursor != cursor {
+		t.Fatalf("latest = %+v, want cursor %s", p, cursor)
+	}
+
 	// New version based on the current content.
 	v2 := []byte("draft two")
 	status, b = e.upload(t, token, map[string]any{"source": "files", "path": f.Path, "fileId": f.ID, "baseSha256": sum(v1)}, v2)

@@ -37,6 +37,16 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "unknown source")
 		return
 	}
+	if q.Get("cursor") == "latest" {
+		// The current position, for clients that only want changes from now on.
+		latest, err := s.Engine.Catalog.LatestSeq(r.Context())
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"changes": []ChangeJSON{}, "cursor": strconv.FormatInt(latest, 10), "more": false})
+		return
+	}
 	cursor, err := strconv.ParseInt(q.Get("cursor"), 10, 64)
 	if q.Get("cursor") == "" {
 		cursor, err = 0, nil
@@ -56,8 +66,9 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]ChangeJSON, 0, len(chs))
 	next := cursor
+	parents := s.parents(r)
 	for _, c := range chs {
-		fj := fileJSON(c.File)
+		fj := parents.fill(fileJSON(c.File))
 		if c.Removed {
 			fj = FileJSON{ID: strconv.FormatInt(c.File.ID, 10), Source: src, Path: c.File.Path, Name: path.Base(c.File.Path), IsDir: c.File.IsDir}
 		}
@@ -87,7 +98,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 	if s.writeDriveError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, fileJSON(f))
+	writeJSON(w, http.StatusCreated, s.parents(r).fill(fileJSON(f)))
 }
 
 func (s *Server) moveFile(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +117,7 @@ func (s *Server) moveFile(w http.ResponseWriter, r *http.Request) {
 	if s.writeDriveError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, fileJSON(got))
+	writeJSON(w, http.StatusOK, s.parents(r).fill(fileJSON(got)))
 }
 
 func (s *Server) deleteFile(w http.ResponseWriter, r *http.Request) {

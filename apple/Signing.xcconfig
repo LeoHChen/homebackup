@@ -1,0 +1,2 @@
+// Signing settings live in Local.xcconfig, which is not committed.
+#include? "Local.xcconfig"
