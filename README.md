@@ -47,6 +47,25 @@ send chunks with `Upload-Offset`, then complete; the server verifies the
 SHA-256. Interrupted uploads resume where they stopped; unfinished sessions
 are removed after 7 days.
 
+## Run as a service on macOS
+
+```sh
+mkdir -p ~/homebackup/bin /Volumes/MyDrive/homebackup   # the backup root must exist
+cp bin/homebackupd-darwin-arm64 ~/homebackup/bin/homebackupd
+cp homebackup.example.json ~/homebackup/homebackup.json   # edit root, sources, listen
+sed "s|HOME_DIR|$HOME|g" deploy/macos/com.homebackup.homebackupd.plist \
+  > ~/Library/LaunchAgents/com.homebackup.homebackupd.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.homebackup.homebackupd.plist
+tail -f ~/Library/Logs/homebackupd.log
+```
+
+The server refuses to start if the backup root is missing, so an unplugged
+external drive never causes backups to fill the internal disk; launchd
+retries every minute until the drive is back.
+
+Keep `"listen": "127.0.0.1:8420"` until you need other devices to connect;
+then switch to `":8420"` (HTTPS for remote access is planned).
+
 ## Google Drive setup
 
 1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
