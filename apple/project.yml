@@ -15,8 +15,14 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
+    # App group shared by each app and its File Provider extension. iOS uses a
+    # "group." identifier. macOS targets override it with a Team-ID-prefixed
+    # one, which macOS 15+ accepts without a provisioning profile entry or a
+    # "wants to access data from other apps" prompt, and which doubles as the
+    # keychain access group for the device token.
+    HB_APP_GROUP: group.com.github.leohchen.homebackup
 packages:
   HomeBackupKit:
     path: HomeBackupKit
@@ -31,7 +37,7 @@ targets:
     entitlements:
       path: HomeBackup/HomeBackup.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+        com.apple.security.application-groups: [$(HB_APP_GROUP)]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup
@@ -49,7 +55,7 @@ targets:
     entitlements:
       path: FileProvider/FileProvider.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+        com.apple.security.application-groups: [$(HB_APP_GROUP)]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.files
@@ -69,9 +75,11 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
-        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+        com.apple.security.application-groups: [$(HB_APP_GROUP)]
+        keychain-access-groups: [$(HB_APP_GROUP)]
     settings:
       base:
+        HB_APP_GROUP: $(DEVELOPMENT_TEAM).com.github.leohchen.homebackup
         PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.mac
         PRODUCT_NAME: HomeBackup
         INFOPLIST_FILE: HomeBackupMac/Info.plist
@@ -91,9 +99,11 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
-        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+        com.apple.security.application-groups: [$(HB_APP_GROUP)]
+        keychain-access-groups: [$(HB_APP_GROUP)]
     settings:
       base:
+        HB_APP_GROUP: $(DEVELOPMENT_TEAM).com.github.leohchen.homebackup
         PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.mac.files
         INFOPLIST_FILE: FileProvider/Info.plist
         GENERATE_INFOPLIST_FILE: NO

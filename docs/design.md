@@ -18,7 +18,9 @@ Status: draft (step 1 of the project plan)
 
 - Two-way sync / conflict resolution with the cloud (until step 4).
 - Multi-user accounts. One owner, many devices.
-- Web UI. Apple apps and a CLI come first.
+- A full web file manager with sharing links. The dashboard (served at `/`)
+  covers status, browsing, restore, devices, and logs; the apps come first
+  for day-to-day use.
 
 ## 2. Architecture
 

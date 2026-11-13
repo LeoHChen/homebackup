@@ -4,7 +4,28 @@ import Security
 /// Server settings shared by the app and its extensions (File Provider)
 /// through the app group. The device token is kept in the Keychain.
 public enum SharedStore {
-    public static let appGroup = "group.com.github.leohchen.homebackup"
+    /// The app group shared with the extensions. On iOS it is the "group."
+    /// identifier. On macOS it is read from the app's own entitlements: a
+    /// Team-ID-prefixed group (`<TEAMID>.com.github.leohchen.homebackup`),
+    /// which macOS 15 and later accept without a provisioning-profile entry
+    /// or a "wants to access data from other apps" prompt, and which is also
+    /// valid as a keychain access group, so the extension can read the token.
+    public static let appGroup: String = {
+        #if os(macOS)
+        if let g = entitledAppGroups().first { return g }
+        #endif
+        return "group.com.github.leohchen.homebackup"
+    }()
+
+    #if os(macOS)
+    static func entitledAppGroups() -> [String] {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, "com.apple.security.application-groups" as CFString, nil)
+        else { return [] }
+        return (value as? [String]) ?? []
+    }
+    #endif
+
     private static let tokenAccount = "token"
     private static let service = "com.github.leohchen.homebackup"
 

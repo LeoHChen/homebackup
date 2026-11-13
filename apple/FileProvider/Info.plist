@@ -29,7 +29,7 @@
 		<key>NSExtensionFileProviderSupportsEnumeration</key>
 		<true/>
 		<key>NSExtensionFileProviderDocumentGroup</key>
-		<string>group.com.github.leohchen.homebackup</string>
+		<string>$(HB_APP_GROUP)</string>
 	</dict>
 </dict>
 </plist>

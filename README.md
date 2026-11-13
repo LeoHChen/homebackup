@@ -14,6 +14,9 @@ your own Mac mini, Raspberry Pi, or PC, and comes with iPhone and Mac apps.
   Raspberry Pi), and Windows.
 - **Private by design:** HTTPS with a pinned key, devices paired with a
   6-digit code, and everything stays in your home.
+- **Manage it from a browser:** a dashboard on the server shows storage,
+  backups, devices, photos, trash and history, recent activity, and hands
+  out pairing codes for new devices.
 
 Status: early (v0.1.0). Keep your cloud accounts while you try it.
 
@@ -24,20 +27,22 @@ Status: early (v0.1.0). Keep your cloud accounts while you try it.
 3. [Configure](#configure)
 4. [Run it as a service](#run-it-as-a-service)
 5. [Open it to your home network](#open-it-to-your-home-network)
-6. [Install the apps and pair them](#install-the-apps-and-pair-them)
-7. [Back up Google Drive](#google-drive-setup)
-8. [Import Google Photos](#google-photos-import-takeout)
-9. [Update, roll back, uninstall](#update-roll-back-uninstall)
-10. [Troubleshooting](#troubleshooting)
-11. [Build from source](#build-from-source)
-12. [API](#api)
+6. [Manage it from a browser](#manage-it-from-a-browser)
+7. [Install the apps and pair them](#install-the-apps-and-pair-them)
+8. [Back up Google Drive](#google-drive-setup)
+9. [Import Google Photos](#google-photos-import-takeout)
+10. [Update, roll back, uninstall](#update-roll-back-uninstall)
+11. [Troubleshooting](#troubleshooting)
+12. [Build from source](#build-from-source)
+13. [API](#api)
 
 ## How it fits together
 
 ```
  iPhone app ─┐                        ┌─ Google Drive (read-only mirror)
  Mac app ────┼── HTTPS (home network) ── homebackupd ─┼─ Google Photos (Takeout import)
- Files/Finder┘                        └─ /backup drive: plain files + history
+ Files/Finder┤                        └─ /backup drive: plain files + history
+ Web browser ┘  (dashboard at https://<server>:8420/)
 ```
 
 `homebackupd` is the server. It keeps everything under one folder, the
@@ -181,21 +186,46 @@ To use another certificate (for example from `tailscale cert`), set
 `"tls": {"mode": "files", "certFile": "...", "keyFile": "..."}`. Set
 `"bonjour": false` to turn off discovery.
 
+## Manage it from a browser
+
+Open the server's address in a browser on your home network, for example
+`https://macmini.local:8420/`. The server log prints this URL at startup.
+The dashboard shows:
+
+- **Overview:** free space on the backup drive, each backup with its size,
+  last sync and any error, and a getting-started checklist.
+- **Files** and **Photos:** browse every backup, open photos and videos,
+  download files, see and restore previous versions, and bring files back
+  from the trash. My Files can be changed here too: upload, new folders,
+  rename, delete.
+- **Devices:** every paired phone, Mac, and browser, with **Add a device**
+  to get a pairing code, and **Revoke** to sign one out.
+- **Activity:** the most recent server log lines.
+- **Settings:** what the server is configured to do, and how to change it.
+
+The browser warns that the connection is not private, because the server
+uses its own key instead of a public certificate. Continue, then compare
+the **server key** on the sign-in page with the one printed by
+`homebackupd pair` or shown by a paired HomeBackup app. If they match, you
+reached your server. Pair the browser with a code like any other device.
+
 ## Install the apps and pair them
 
 ### Pairing (all apps)
 
-On the server, run:
+The first device needs a code from the server itself:
 
 ```sh
 ~/homebackup/bin/homebackupd -config ~/homebackup/homebackup.json pair
 # Pairing code: 482 913 (valid for 10 minutes)
-# Server key: 7F3C 09D2 5B8E A41F
+# Server key:   7F3C 09D2 5B8E A41F
 ```
 
-In the app, pick your server and check the server key. Then enter the code.
-Each device gets its own token. To list devices, use `GET /api/v1/devices`;
-to revoke one, use `DELETE /api/v1/devices/{id}`.
+After that, any paired device can hand out codes for the next one: in the
+Mac app, **Pair another device…**; in the dashboard, **Devices → Add a
+device**. In the new device, pick your server, check that it shows the same
+server key, and enter the code. Each device gets its own token; revoke one
+from the dashboard's Devices page (or `DELETE /api/v1/devices/{id}`).
 
 ### Mac app (menu bar + Finder)
 
@@ -227,8 +257,16 @@ an assistant, see [docs/mac-client-setup.md](docs/mac-client-setup.md).
   `.provisionprofile`, run it again. Xcode was still downloading the profile.
 
 Then click the menu bar icon, choose **Connect to your home server…**, and
-pair. If Finder locations don't appear, check **System Settings → General →
-Login Items & Extensions → File Providers**.
+pair. The menu shows the server, its key, free space on the backup drive,
+and each backup's state, and offers **Pair another device…** and **Open
+dashboard**.
+
+macOS may keep new File Provider extensions turned off until you allow them.
+If Finder says *HomeBackup does not have permission*, or the locations never
+appear, the menu shows **Finder can't show your files yet** with an **Open
+System Settings…** button; turn on HomeBackup under **File Providers**
+(macOS 15 and later: General → Login Items & Extensions; macOS 14: Privacy &
+Security → Extensions). Finder catches up within a minute.
 
 ### iPhone and iPad app
 
@@ -291,13 +329,34 @@ once. Imported archives are remembered; you can delete them afterwards.
 **Update (macOS):**
 
 ```sh
-cp ~/homebackup/bin/homebackupd ~/homebackup/bin/homebackupd.prev
+mv ~/homebackup/bin/homebackupd ~/homebackup/bin/homebackupd.prev
 cp homebackupd-<new>/homebackupd ~/homebackup/bin/homebackupd
 launchctl kickstart -k gui/$(id -u)/com.homebackup.homebackupd
+tail -n 5 ~/Library/Logs/homebackupd.log   # wait for "listening"
 ```
 
-**Roll back:** copy `homebackupd.prev` back, then run `kickstart` again.
-On Linux, replace `/usr/local/bin/homebackupd` and run
+Always put the new binary in place as a **new file** (`mv` the old one
+away first, or `mv` the new one in). Writing into the existing file with
+`cp` while the server runs corrupts its code signature; macOS then kills
+every launch with `load code signature error` until the file is replaced.
+
+**The removable-volume prompt:** when the backup root is on an external
+drive, macOS asks once, on the server's screen, whether `homebackupd` may
+access files on that volume. Until you click **Allow** the server waits
+before `listening` and the apps can't connect. An unsigned (ad-hoc) binary
+is identified by its exact contents, so **every update asks again**. To be
+asked only once, sign the binary with your Developer ID before installing
+it; the permission then follows the signing identity across updates:
+
+```sh
+make sign CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+```
+
+You can also grant it ahead of time under **System Settings → Privacy &
+Security → Files and Folders** (or give it **Full Disk Access**).
+
+**Roll back:** `mv` `homebackupd.prev` back into place, then run
+`kickstart` again. On Linux, replace `/usr/local/bin/homebackupd` and run
 `sudo systemctl restart homebackupd`.
 
 **Uninstall (macOS):** run
@@ -310,11 +369,15 @@ files.
 | Problem | Check |
 |---|---|
 | Server does not start | The log says `backup root ... is not available`: mount the drive or fix `root` |
+| Server starts but never logs `listening` (macOS, external drive) | macOS is asking on the server's screen whether homebackupd may access the removable volume. Click Allow. See [Update](#update-roll-back-uninstall) for how to avoid the question on every update. |
+| `load code signature error` in the system log, server killed at launch | The binary was overwritten in place. Replace it with a fresh file (`mv`), see [Update](#update-roll-back-uninstall). |
 | Apps can't find the server | Same network? Try `curl -k https://<name>.local:8420/api/v1/health`, then enter the address by hand. Allow incoming connections in the macOS firewall. |
 | Server key doesn't match | Don't pair. Someone else may be answering, or the TLS key was replaced (`<root>/state/tls/`). |
 | Wrong or expired code | Run `homebackupd pair` again; codes last 10 minutes, and 5 wrong tries lock pairing for a while |
 | No video or HEIC thumbnails | The startup line `thumbnails tools=[...]` lists the tools found; install `ffmpeg` |
-| Finder/Files locations missing | Pair the app first; enable HomeBackup under File Providers (macOS) |
+| Finder/Files locations missing, or "HomeBackup does not have permission to open" | Pair the app first; then turn on HomeBackup under File Providers in System Settings (the Mac app's menu offers a button). `pluginkit -e use` alone does not do it. |
+| Dashboard shows a browser privacy warning | Expected with the server's own key. Continue, then compare the server key on the sign-in page with the one from `homebackupd pair`. |
+| What is the server doing? | Dashboard → Activity shows recent log lines; the full log is `~/Library/Logs/homebackupd.log` (macOS) or `journalctl -u homebackupd` (Linux) |
 
 ## Build from source
 
@@ -333,7 +396,7 @@ Layout:
 
 ```
 cmd/homebackupd/   server daemon
-internal/          api, catalog (SQLite), engine, store, sources, thumbs, tlsutil, discovery
+internal/          api, catalog (SQLite), engine, store, sources, thumbs, tlsutil, discovery, web (dashboard), logbuf
 apple/             HomeBackupKit (Swift library), iPhone app, File Provider, Mac app
 deploy/            macOS LaunchAgent, Linux systemd unit
 api/openapi.yaml   API specification
@@ -342,9 +405,13 @@ docs/design.md     design document
 
 ## API
 
-The apps use the HTTP API in [`api/openapi.yaml`](api/openapi.yaml). For
-scripts, set an admin token with the `HOMEBACKUP_TOKEN` environment variable
-and send `Authorization: Bearer <token>`.
+The apps and the dashboard use the HTTP API in
+[`api/openapi.yaml`](api/openapi.yaml). For scripts, set an admin token with
+the `HOMEBACKUP_TOKEN` environment variable and send
+`Authorization: Bearer <token>`. `GET /api/v1/status` reports disk space,
+per-source counts and sizes, and the paired-device count;
+`POST /api/v1/pair/codes` issues a pairing code; `GET /api/v1/log` returns
+recent log lines.
 
 ### Device uploads
 
