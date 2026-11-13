@@ -1,0 +1,5 @@
+/bin/
+/dist/
+*.db
+homebackup.json
+.DS_Store

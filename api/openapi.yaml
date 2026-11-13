@@ -1,0 +1,317 @@
+openapi: 3.1.0
+info:
+  title: homebackup API
+  version: 0.1.0
+  description: |
+    HTTP API of homebackupd, used by the iPhone and Mac apps and the CLI.
+    Endpoints marked `x-status: planned` are designed but not yet implemented.
+servers:
+  - url: http://{host}:8420/api/v1
+    variables:
+      host:
+        default: homebackup.local
+security:
+  - deviceToken: []
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: Server is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string }
+  /pair:
+    post:
+      x-status: planned
+      summary: Exchange a pairing code for a device token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, deviceName]
+              properties:
+                code: { type: string, example: "482913" }
+                deviceName: { type: string, example: "Leo's iPhone" }
+                platform: { type: string, enum: [ios, macos, cli] }
+      responses:
+        "200":
+          description: Paired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: string }
+                  token: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /status:
+    get:
+      summary: Server, disk, and source status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /sources:
+    get:
+      x-status: planned
+      summary: List configured sources
+      responses:
+        "200":
+          description: Sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SourceStatus" }
+  /sources/{id}/sync:
+    post:
+      x-status: planned
+      summary: Start a sync now
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "202": { description: Sync started }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /files:
+    get:
+      x-status: planned
+      summary: List a folder
+      parameters:
+        - { name: source, in: query, required: true, schema: { type: string } }
+        - { name: path, in: query, schema: { type: string, default: "" } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Folder listing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/File" }
+                  nextCursor: { type: string }
+  /files/{id}:
+    get:
+      x-status: planned
+      summary: File metadata
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+      responses:
+        "200":
+          description: File
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /files/{id}/content:
+    get:
+      x-status: planned
+      summary: Download file content (supports Range)
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+        - { name: version, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Content, content: { application/octet-stream: {} } }
+        "206": { description: Partial content }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /files/{id}/versions:
+    get:
+      x-status: planned
+      summary: Version history
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+      responses:
+        "200":
+          description: Versions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Version" }
+  /files/{id}/restore:
+    post:
+      x-status: planned
+      summary: Restore a previous version or a trashed file
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: string, description: Omit to restore from trash }
+      responses:
+        "200": { description: Restored }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /trash:
+    get:
+      x-status: planned
+      summary: List deleted files still within retention
+      responses:
+        "200":
+          description: Trashed files
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/File" }
+  /uploads:
+    post:
+      x-status: planned
+      summary: Start a resumable upload (used by the iPhone app)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, path, size, sha256]
+              properties:
+                source: { type: string, example: iphone }
+                path: { type: string, example: "2026/11/IMG_0001.HEIC" }
+                size: { type: integer, format: int64 }
+                sha256: { type: string }
+                assetId: { type: string, description: PhotoKit localIdentifier, used for dedupe }
+                created: { type: string, format: date-time }
+      responses:
+        "201":
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadId: { type: string }
+                  offset: { type: integer, format: int64 }
+        "200": { description: Already backed up, nothing to upload }
+  /uploads/{id}:
+    patch:
+      x-status: planned
+      summary: Append a chunk
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: Upload-Offset, in: header, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream: {}
+      responses:
+        "204": { description: Chunk stored; new offset in Upload-Offset header }
+        "409": { description: Offset mismatch; resume from the returned Upload-Offset }
+  /uploads/{id}/complete:
+    post:
+      x-status: planned
+      summary: Finish an upload and verify its SHA-256
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Stored }
+        "422": { description: Checksum mismatch }
+  /devices:
+    get:
+      x-status: planned
+      summary: List paired devices
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    platform: { type: string }
+                    lastSeen: { type: string, format: date-time }
+  /devices/{id}:
+    delete:
+      x-status: planned
+      summary: Revoke a device token
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+  parameters:
+    FileId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing or invalid device token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    SourceStatus:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [gdrive, gphotos-takeout, device-upload, icloud-local] }
+        lastSync: { type: string, format: date-time }
+        lastError: { type: string }
+    Status:
+      type: object
+      properties:
+        version: { type: string }
+        started: { type: string, format: date-time }
+        root: { type: string }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/SourceStatus" }
+    File:
+      type: object
+      properties:
+        id: { type: string }
+        source: { type: string }
+        path: { type: string }
+        name: { type: string }
+        isDir: { type: boolean }
+        size: { type: integer, format: int64 }
+        modified: { type: string, format: date-time }
+        sha256: { type: string }
+        deletedAt: { type: string, format: date-time }
+    Version:
+      type: object
+      properties:
+        id: { type: string }
+        size: { type: integer, format: int64 }
+        sha256: { type: string }
+        created: { type: string, format: date-time }

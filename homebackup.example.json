@@ -1,0 +1,9 @@
+{
+  "listen": ":8420",
+  "root": "/Volumes/Backup/homebackup",
+  "retention": { "trashDays": 30, "versionDays": 30, "maxVersions": 100 },
+  "sources": [
+    { "id": "gdrive", "type": "gdrive", "schedule": "1h" },
+    { "id": "gphotos", "type": "gphotos-takeout" }
+  ]
+}
