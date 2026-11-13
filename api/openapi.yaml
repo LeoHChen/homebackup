@@ -66,7 +66,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /sources:
     get:
-      x-status: planned
       summary: List configured sources
       responses:
         "200":
@@ -78,21 +77,18 @@ paths:
                 items: { $ref: "#/components/schemas/SourceStatus" }
   /sources/{id}/sync:
     post:
-      x-status: planned
       summary: Start a sync now
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "202": { description: Sync started }
+        "202": { description: Sync queued }
         "404": { $ref: "#/components/responses/NotFound" }
   /files:
     get:
-      x-status: planned
       summary: List a folder
       parameters:
         - { name: source, in: query, required: true, schema: { type: string } }
         - { name: path, in: query, schema: { type: string, default: "" } }
-        - { name: cursor, in: query, schema: { type: string } }
       responses:
         "200":
           description: Folder listing
@@ -104,10 +100,8 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/File" }
-                  nextCursor: { type: string }
   /files/{id}:
     get:
-      x-status: planned
       summary: File metadata
       parameters:
         - { $ref: "#/components/parameters/FileId" }
@@ -120,7 +114,6 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
   /files/{id}/content:
     get:
-      x-status: planned
       summary: Download file content (supports Range)
       parameters:
         - { $ref: "#/components/parameters/FileId" }
@@ -131,7 +124,6 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
   /files/{id}/versions:
     get:
-      x-status: planned
       summary: Version history
       parameters:
         - { $ref: "#/components/parameters/FileId" }
@@ -145,7 +137,6 @@ paths:
                 items: { $ref: "#/components/schemas/Version" }
   /files/{id}/restore:
     post:
-      x-status: planned
       summary: Restore a previous version or a trashed file
       parameters:
         - { $ref: "#/components/parameters/FileId" }
@@ -155,14 +146,22 @@ paths:
             schema:
               type: object
               properties:
-                version: { type: string, description: Omit to restore from trash }
+                version: { type: string, description: Version ID to restore. Omit to restore from trash. }
+                path: { type: string, description: "Trash restore only: restore to this path instead of the original." }
       responses:
-        "200": { description: Restored }
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "400": { description: Invalid path }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Target path occupied, or file is not in the trash }
   /trash:
     get:
-      x-status: planned
       summary: List deleted files still within retention
+      parameters:
+        - { name: source, in: query, schema: { type: string } }
       responses:
         "200":
           description: Trashed files
@@ -285,6 +284,8 @@ components:
       properties:
         id: { type: string }
         type: { type: string, enum: [gdrive, gphotos-takeout, device-upload, icloud-local] }
+        schedule: { type: string, example: 1h0m0s }
+        running: { type: boolean }
         lastSync: { type: string, format: date-time }
         lastError: { type: string }
     Status:
@@ -303,7 +304,7 @@ components:
         source: { type: string }
         path: { type: string }
         name: { type: string }
-        isDir: { type: boolean }
+        isDir: { type: boolean, description: "Directories have no id; list them with ?path=" }
         size: { type: integer, format: int64 }
         modified: { type: string, format: date-time }
         sha256: { type: string }

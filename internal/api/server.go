@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/LeoHChen/homebackup/internal/engine"
 )
 
 // TokenChecker reports whether a bearer token belongs to a paired device.
@@ -55,6 +57,8 @@ type Server struct {
 	Tokens  TokenChecker
 	Status  StatusFunc
 	Log     *slog.Logger
+	// Engine backs the sources, files, and trash endpoints. Optional.
+	Engine *engine.Engine
 }
 
 // Handler returns the root HTTP handler.
@@ -62,6 +66,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.Handle("GET /api/v1/status", s.auth(http.HandlerFunc(s.status)))
+	if s.Engine != nil {
+		s.fileRoutes(mux)
+	}
 	return s.logRequests(mux)
 }
 

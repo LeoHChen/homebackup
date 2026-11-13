@@ -31,11 +31,12 @@ func read(t *testing.T, p string) string {
 
 func TestPutKeepsPreviousVersions(t *testing.T) {
 	s := newStore(t)
-	sum1, err := s.Put("gdrive", "docs/a.txt", strings.NewReader("one"))
+	res1, err := s.Put("gdrive", "docs/a.txt", strings.NewReader("one"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put("gdrive", "docs/a.txt", strings.NewReader("two")); err != nil {
+	res2, err := s.Put("gdrive", "docs/a.txt", strings.NewReader("two"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	cur, _ := s.DataPath("gdrive", "docs/a.txt")
@@ -50,9 +51,12 @@ func TestPutKeepsPreviousVersions(t *testing.T) {
 	if got := read(t, old); got != "one" {
 		t.Fatalf("old version = %q, want one", got)
 	}
+	if res2.PreviousVersion != old || res1.PreviousVersion != "" || res1.Size != 3 {
+		t.Errorf("results = %+v / %+v", res1, res2)
+	}
 	const sha256One = "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"
-	if sum1 != sha256One {
-		t.Errorf("sum = %s, want %s", sum1, sha256One)
+	if res1.SHA256 != sha256One {
+		t.Errorf("sum = %s, want %s", res1.SHA256, sha256One)
 	}
 }
 
@@ -101,5 +105,59 @@ func TestRejectsEscapingPaths(t *testing.T) {
 		if _, err := s.Put(tc.src, tc.rel, strings.NewReader("")); !errors.Is(err, ErrInvalidPath) {
 			t.Errorf("Put(%q, %q) err = %v, want ErrInvalidPath", tc.src, tc.rel, err)
 		}
+	}
+}
+
+func TestRestoreAndPurge(t *testing.T) {
+	s := newStore(t)
+	s.Put("gdrive", "a.txt", strings.NewReader("v1"))
+	res, _ := s.Put("gdrive", "a.txt", strings.NewReader("v2"))
+
+	// Restore v1: v2 becomes a version.
+	r, err := s.RestoreVersion("gdrive", "a.txt", res.PreviousVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := s.DataPath("gdrive", "a.txt")
+	if read(t, cur) != "v1" || read(t, r.PreviousVersion) != "v2" {
+		t.Fatal("restore version did not swap contents")
+	}
+
+	trashed, _ := s.Delete("gdrive", "a.txt")
+	s.Put("gdrive", "a.txt", strings.NewReader("new"))
+	if err := s.RestoreTrash("gdrive", "a.txt", trashed); !errors.Is(err, ErrExists) {
+		t.Fatalf("err = %v, want ErrExists", err)
+	}
+	if err := s.RestoreTrash("gdrive", "b.txt", trashed); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.DataPath("gdrive", "b.txt")
+	if read(t, b) != "v1" {
+		t.Fatal("restored trash content mismatch")
+	}
+
+	if err := s.Purge(b); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("purging a current file must fail, got %v", err)
+	}
+	if err := s.Purge(r.PreviousVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.PreviousVersion); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("version not purged")
+	}
+	if _, err := s.RestoreVersion("gdrive", "a.txt", "/etc/passwd"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("restore from outside versions must fail, got %v", err)
+	}
+}
+
+func TestMove(t *testing.T) {
+	s := newStore(t)
+	s.Put("gdrive", "old/a.txt", strings.NewReader("x"))
+	if err := s.Move("gdrive", "old/a.txt", "new/b.txt"); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.DataPath("gdrive", "new/b.txt")
+	if read(t, p) != "x" {
+		t.Fatal("move failed")
 	}
 }

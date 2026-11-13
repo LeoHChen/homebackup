@@ -24,6 +24,7 @@ type Item struct {
 	// (e.g. a Drive file ID). It must not change when the item is renamed.
 	SourceID string
 	// Path is the item's path relative to the source root, using '/'.
+	// It must be unique among the source's live items.
 	Path     string
 	Size     int64
 	Modified time.Time
