@@ -161,3 +161,13 @@ func TestMove(t *testing.T) {
 		t.Fatal("move failed")
 	}
 }
+
+func TestOpenRequiresExistingRoot(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "unplugged-drive", "homebackup")
+	if _, err := Open(missing); err == nil {
+		t.Fatal("Open must fail when the root does not exist")
+	}
+	if _, err := os.Stat(filepath.Dir(missing)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("Open must not create missing parents")
+	}
+}

@@ -45,6 +45,14 @@ func Open(root string) (*Store, error) {
 	if root == "" {
 		return nil, errors.New("store root is empty")
 	}
+	// The root must already exist. This stops the server from silently
+	// writing to the internal disk when an external backup drive is not
+	// mounted (e.g. /Volumes/MyDrive/homebackup after the drive is unplugged).
+	if fi, err := os.Stat(root); err != nil {
+		return nil, fmt.Errorf("backup root %s is not available (drive not mounted?): %w", root, err)
+	} else if !fi.IsDir() {
+		return nil, fmt.Errorf("backup root %s is not a directory", root)
+	}
 	for _, d := range []string{dirData, dirVersions, dirTrash, dirState, dirTmp} {
 		if err := os.MkdirAll(filepath.Join(root, d), 0o750); err != nil {
 			return nil, err

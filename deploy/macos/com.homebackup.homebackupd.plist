@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent for homebackupd: starts at login and restarts if it exits.
+  Install (replace HOME_DIR with your home directory, e.g. /Users/me):
+    sed "s|HOME_DIR|$HOME|g" deploy/macos/com.homebackup.homebackupd.plist \
+      > ~/Library/LaunchAgents/com.homebackup.homebackupd.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.homebackup.homebackupd.plist
+  Stop / uninstall:
+    launchctl bootout gui/$(id -u)/com.homebackup.homebackupd
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.homebackup.homebackupd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>HOME_DIR/homebackup/bin/homebackupd</string>
+    <string>-config</string>
+    <string>HOME_DIR/homebackup/homebackup.json</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <!-- If the backup drive is not mounted the server exits; retry every minute. -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>HOME_DIR/Library/Logs/homebackupd.log</string>
+  <key>StandardErrorPath</key>
+  <string>HOME_DIR/Library/Logs/homebackupd.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>
