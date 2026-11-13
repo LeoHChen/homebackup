@@ -3,3 +3,9 @@
 *.db
 homebackup.json
 .DS_Store
+
+# Swift
+.build/
+.swiftpm/
+xcuserdata/
+DerivedData/
