@@ -100,7 +100,11 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request, lim *pairLimiter) 
 	if s.Log != nil {
 		s.Log.Info("device paired", "id", dev.ID, "name", dev.Name, "platform", dev.Platform)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deviceId": dev.ID, "token": token})
+	resp := map[string]string{"deviceId": dev.ID, "token": token}
+	if s.CertFingerprint != "" {
+		resp["certFingerprint"] = s.CertFingerprint
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {

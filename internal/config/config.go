@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"time"
 )
@@ -45,8 +46,53 @@ type Source struct {
 type Config struct {
 	Listen    string    `json:"listen"`
 	Root      string    `json:"root"`
+	TLS       TLS       `json:"tls"`
+	Bonjour   *bool     `json:"bonjour,omitempty"`
 	Retention Retention `json:"retention"`
 	Sources   []Source  `json:"sources"`
+}
+
+// TLS configures HTTPS.
+type TLS struct {
+	// Mode is "auto" (default: HTTPS with a self-signed certificate unless
+	// listening only on loopback), "self-signed", "files", or "off".
+	Mode     string `json:"mode,omitempty"`
+	CertFile string `json:"certFile,omitempty"`
+	KeyFile  string `json:"keyFile,omitempty"`
+}
+
+// LoopbackOnly reports whether Listen accepts connections only from this machine.
+func (c Config) LoopbackOnly() bool {
+	host, _, err := net.SplitHostPort(c.Listen)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// TLSMode resolves "auto" to "self-signed" or "off".
+func (c Config) TLSMode() string {
+	switch c.TLS.Mode {
+	case "", "auto":
+		if c.LoopbackOnly() {
+			return "off"
+		}
+		return "self-signed"
+	}
+	return c.TLS.Mode
+}
+
+// BonjourEnabled reports whether to advertise on the local network
+// (default: on unless listening only on loopback).
+func (c Config) BonjourEnabled() bool {
+	if c.Bonjour != nil {
+		return *c.Bonjour
+	}
+	return !c.LoopbackOnly()
 }
 
 // KnownSourceTypes lists the source types the server understands.
@@ -94,6 +140,18 @@ func (c Config) Validate() error {
 	var errs []error
 	if c.Root == "" {
 		errs = append(errs, errors.New("root is required"))
+	}
+	switch c.TLS.Mode {
+	case "", "auto", "self-signed", "off":
+	case "files":
+		if c.TLS.CertFile == "" || c.TLS.KeyFile == "" {
+			errs = append(errs, errors.New("tls mode \"files\" needs certFile and keyFile"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("unknown tls mode %q", c.TLS.Mode))
+	}
+	if _, _, err := net.SplitHostPort(c.Listen); err != nil {
+		errs = append(errs, fmt.Errorf("listen: %w", err))
 	}
 	if c.Retention.TrashDays < 0 || c.Retention.VersionDays < 0 || c.Retention.MaxVersions < 0 {
 		errs = append(errs, errors.New("retention values must not be negative"))

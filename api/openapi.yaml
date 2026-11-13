@@ -5,9 +5,11 @@ info:
   description: |
     HTTP API of homebackupd, used by the iPhone and Mac apps and the CLI.
     Devices pair with a 6-digit code from `homebackupd pair` and then send
-    their token as `Authorization: Bearer <token>`.
+    their token as `Authorization: Bearer <token>`. Off-loopback the server
+    uses HTTPS with a self-signed certificate; clients pin the SHA-256 of its
+    public key (certFingerprint, also advertised over Bonjour as `fp=`).
 servers:
-  - url: http://{host}:8420/api/v1
+  - url: https://{host}:8420/api/v1
     variables:
       host:
         default: homebackup.local
@@ -28,6 +30,9 @@ paths:
                 properties:
                   status: { type: string, example: ok }
                   version: { type: string }
+                  certFingerprint:
+                    type: string
+                    description: SHA-256 (hex) of the server's TLS public key; absent over plain HTTP.
   /pair:
     post:
       summary: Exchange a pairing code for a device token
@@ -53,6 +58,7 @@ paths:
                 properties:
                   deviceId: { type: string }
                   token: { type: string }
+                  certFingerprint: { type: string, description: Pin this key for all later requests. }
         "400": { description: Invalid deviceName or platform }
         "401": { description: Invalid or expired pairing code }
         "429": { description: Too many pairing attempts; see Retry-After }

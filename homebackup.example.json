@@ -1,5 +1,6 @@
 {
   "listen": ":8420",
+  "tls": { "mode": "auto" },
   "root": "/Volumes/Backup/homebackup",
   "retention": { "trashDays": 30, "versionDays": 30, "maxVersions": 100 },
   "sources": [

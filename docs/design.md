@@ -147,6 +147,10 @@ REST + JSON under `/api/v1`. Full spec: [`api/openapi.yaml`](../api/openapi.yaml
   Apple apps find the server without typing an IP.
 - Remote access: **Tailscale** (no router port forwarding). TLS via
   Tailscale HTTPS certs, or a self-signed cert pinned by the apps on pairing.
+- Implemented: HTTPS is automatic when not listening on loopback
+  (self-signed ECDSA P-256, 10 years, stored in `state/tls/`); apps pin the
+  SHA-256 of the public key, shown by `homebackupd pair` and advertised in the
+  Bonjour TXT record (`fp=`, `tls=`, `v=`).
 
 ### 5.2 Auth: device pairing
 
