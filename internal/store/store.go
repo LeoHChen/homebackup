@@ -83,57 +83,149 @@ func (s *Store) DataPath(sourceID, rel string) (string, error) {
 	return filepath.Join(s.root, dirData, r), nil
 }
 
+// PutResult describes a completed Put.
+type PutResult struct {
+	SHA256 string
+	Size   int64
+	// PreviousVersion is the path the replaced current file was moved to,
+	// or "" if there was no current file.
+	PreviousVersion string
+}
+
 // Put writes r as the current version of rel. If a current version exists it is
-// moved to the versions directory first. Put returns the SHA-256 of the content.
-// The write is atomic: readers see either the old or the new file.
-func (s *Store) Put(sourceID, rel string, r io.Reader) (string, error) {
+// moved to the versions directory first. The write is atomic: readers see
+// either the old or the new file.
+func (s *Store) Put(sourceID, rel string, r io.Reader) (PutResult, error) {
 	dst, err := s.DataPath(sourceID, rel)
 	if err != nil {
-		return "", err
+		return PutResult{}, err
 	}
 	tmp, err := os.CreateTemp(filepath.Join(s.root, dirTmp), "put-*")
 	if err != nil {
-		return "", err
+		return PutResult{}, err
 	}
 	defer os.Remove(tmp.Name()) // no-op after a successful rename
 
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), r); err != nil {
+	n, err := io.Copy(io.MultiWriter(tmp, h), r)
+	if err != nil {
 		tmp.Close()
-		return "", err
+		return PutResult{}, err
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return "", err
+		return PutResult{}, err
 	}
 	if err := tmp.Close(); err != nil {
-		return "", err
+		return PutResult{}, err
 	}
 
+	res := PutResult{SHA256: hex.EncodeToString(h.Sum(nil)), Size: n}
 	if _, err := os.Stat(dst); err == nil {
-		if err := s.moveToVersions(sourceID, rel, dst); err != nil {
-			return "", err
+		if res.PreviousVersion, err = s.moveToVersions(sourceID, rel, dst); err != nil {
+			return PutResult{}, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
+		return PutResult{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-		return "", err
+		return PutResult{}, err
 	}
 	if err := os.Rename(tmp.Name(), dst); err != nil {
-		return "", err
+		return PutResult{}, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return res, nil
 }
 
-func (s *Store) moveToVersions(sourceID, rel, current string) error {
+func (s *Store) moveToVersions(sourceID, rel, current string) (string, error) {
 	r, _ := cleanRel(sourceID, rel) // already validated by caller
 	dir := filepath.Join(s.root, dirVersions, r)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(dir, s.now().UTC().Format("20060102T150405.000000000Z")+"_"+filepath.Base(current))
+	return dst, os.Rename(current, dst)
+}
+
+// Move renames the current file of a source item, e.g. after a rename at the source.
+func (s *Store) Move(sourceID, from, to string) error {
+	src, err := s.DataPath(sourceID, from)
+	if err != nil {
 		return err
 	}
-	name := s.now().UTC().Format("20060102T150405.000000000Z") + "_" + filepath.Base(current)
-	return os.Rename(current, filepath.Join(dir, name))
+	dst, err := s.DataPath(sourceID, to)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		if _, err := s.moveToVersions(sourceID, to, dst); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
+// RestoreVersion makes the file at versionPath the current version of rel.
+// The replaced current file (if any) becomes a version itself.
+func (s *Store) RestoreVersion(sourceID, rel, versionPath string) (PutResult, error) {
+	if err := s.within(versionPath, dirVersions); err != nil {
+		return PutResult{}, err
+	}
+	f, err := os.Open(versionPath)
+	if err != nil {
+		return PutResult{}, err
+	}
+	defer f.Close()
+	return s.Put(sourceID, rel, f)
+}
+
+// ErrExists is returned when a restore target is already occupied.
+var ErrExists = errors.New("target already exists")
+
+// RestoreTrash moves a trashed file back to rel. It fails with ErrExists if a
+// current file already exists at rel.
+func (s *Store) RestoreTrash(sourceID, rel, trashPath string) error {
+	if err := s.within(trashPath, dirTrash); err != nil {
+		return err
+	}
+	dst, err := s.DataPath(sourceID, rel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return ErrExists
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	return os.Rename(trashPath, dst)
+}
+
+// Purge permanently removes a file from the versions or trash directory.
+func (s *Store) Purge(p string) error {
+	if p == "" {
+		return nil
+	}
+	if s.within(p, dirVersions) != nil && s.within(p, dirTrash) != nil {
+		return fmt.Errorf("%w: refusing to purge %q", ErrInvalidPath, p)
+	}
+	err := os.Remove(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// within checks that p is inside <root>/<dir>.
+func (s *Store) within(p, dir string) error {
+	base := filepath.Join(s.root, dir) + string(filepath.Separator)
+	if !strings.HasPrefix(filepath.Clean(p), base) {
+		return fmt.Errorf("%w: %q is not under %s", ErrInvalidPath, p, dir)
+	}
+	return nil
 }
 
 // Delete moves the current version of rel into the trash and returns its new location.
