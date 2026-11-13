@@ -27,7 +27,7 @@ struct PairingView: View {
                         }
                     }
                     Section("Or enter its address") {
-                        TextField("https://mac-mini.local:8420", text: $manualURL)
+                        TextField("https://your-server.local:8420", text: $manualURL)
                             .textInputAutocapitalization(.never)
                             .keyboardType(.URL)
                             .autocorrectionDisabled()
@@ -63,7 +63,7 @@ struct PairingView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("Connect to HomeBackup")
+            .navigationTitle("HomeBackup")
             .task {
                 for await list in ServerBrowser().servers() { servers = list }
             }
