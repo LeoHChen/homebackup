@@ -1,4 +1,5 @@
 import HomeBackupKit
+import QuickLook
 import SwiftUI
 
 /// Picks a source (My Files, Google Drive backup, ...) and browses it.
