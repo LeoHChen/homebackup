@@ -23,6 +23,10 @@ func (s *Server) fileRoutes(mux *http.ServeMux) {
 	h("GET /api/v1/files/{id}/versions", s.fileVersions)
 	h("POST /api/v1/files/{id}/restore", s.restoreFile)
 	h("GET /api/v1/trash", s.listTrash)
+	h("GET /api/v1/changes", s.changes)
+	h("POST /api/v1/folders", s.createFolder)
+	h("PATCH /api/v1/files/{id}", s.moveFile)
+	h("DELETE /api/v1/files/{id}", s.deleteFile)
 	s.deviceRoutes(mux)
 	s.uploadRoutes(mux)
 }
@@ -63,7 +67,7 @@ func fileJSON(f catalog.File) FileJSON {
 	m := f.Modified
 	return FileJSON{
 		ID: strconv.FormatInt(f.ID, 10), Source: f.Source, Path: f.Path, Name: f.Name(),
-		Size: f.Size, Modified: &m, SHA256: f.SHA256, DeletedAt: f.DeletedAt,
+		Size: f.Size, Modified: &m, SHA256: f.SHA256, DeletedAt: f.DeletedAt, IsDir: f.IsDir,
 	}
 }
 
@@ -110,6 +114,10 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]FileJSON, 0, len(entries))
 	for _, e := range entries {
+		if e.IsDir && e.File != nil {
+			items = append(items, fileJSON(*e.File))
+			continue
+		}
 		if e.IsDir {
 			p := e.Name
 			if dir != "" {

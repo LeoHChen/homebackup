@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/LeoHChen/homebackup/internal/catalog"
+	"github.com/LeoHChen/homebackup/internal/engine"
 	"github.com/LeoHChen/homebackup/internal/source"
 )
 
@@ -51,13 +52,18 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		SHA256  string    `json:"sha256"`
 		AssetID string    `json:"assetId"`
 		Created time.Time `json:"created"`
+		// Drive sources: FileID replaces an existing file (new version);
+		// BaseSHA256 is the content the client last saw, for conflict detection.
+		FileID     string `json:"fileId"`
+		BaseSHA256 string `json:"baseSha256"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	if typ, ok := s.Engine.SourceType(req.Source); !ok || typ != "device-upload" {
-		writeError(w, http.StatusBadRequest, "bad_request", "source must be a configured device-upload source")
+	typ, ok := s.Engine.SourceType(req.Source)
+	if !ok || (typ != "device-upload" && typ != engine.WritableType) {
+		writeError(w, http.StatusBadRequest, "bad_request", "source must be a configured device-upload or drive source")
 		return
 	}
 	if _, err := s.Engine.Store.DataPath(req.Source, req.Path); err != nil {
@@ -71,6 +77,15 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	itemID := req.AssetID
 	if itemID == "" {
 		itemID = "sha256:" + req.SHA256
+	}
+	if typ == engine.WritableType {
+		var status int
+		var code, msg string
+		itemID, req.Path, status, code, msg = s.driveUploadTarget(r, req.Source, req.Path, req.FileID, req.BaseSHA256, req.SHA256)
+		if status != 0 {
+			writeError(w, status, code, msg)
+			return
+		}
 	}
 
 	// Already backed up with the same content?

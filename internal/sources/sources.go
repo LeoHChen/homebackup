@@ -56,7 +56,8 @@ func New(ctx context.Context, c config.Source, stateDir string, log *slog.Logger
 		})
 	case "gphotos-takeout":
 		return takeout.New(c.ID, c.Options["inbox"], log)
-	case "device-upload":
+	case "device-upload", "drive":
+		// Both receive files through the API rather than pulling them.
 		return device.New(c.ID), nil
 	case "icloud-local":
 		return nil, ErrNotImplemented

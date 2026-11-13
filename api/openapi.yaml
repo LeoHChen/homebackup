@@ -120,6 +120,94 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/File" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Rename or move a file or folder (drive sources only)
+      description: A folder moves with everything in it. Missing parent folders are created.
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: "Archive/2026/report.pdf" }
+      responses:
+        "200":
+          description: Moved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "400": { description: Invalid path, or a folder moved into itself }
+        "403": { description: The source is read-only (it mirrors a cloud service) }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: An item with that path already exists }
+    delete:
+      summary: Move a file or folder to the trash (drive sources only)
+      description: Deleting a folder trashes every file in it. Deleting a trashed item is a no-op.
+      parameters:
+        - { $ref: "#/components/parameters/FileId" }
+      responses:
+        "204": { description: Moved to the trash }
+        "403": { description: The source is read-only }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /folders:
+    post:
+      summary: Create a folder and any missing parents (drive sources only)
+      description: Creating a folder that already exists returns it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, path]
+              properties:
+                source: { type: string, example: files }
+                path: { type: string, example: "Work/Reports" }
+      responses:
+        "201":
+          description: Folder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "400": { description: Unknown source or invalid path }
+        "403": { description: The source is read-only }
+        "409": { description: A file exists where a folder is needed }
+  /changes:
+    get:
+      summary: Change feed for sync clients
+      description: |
+        Start with cursor 0 to receive every item, then pass back the returned
+        cursor to receive only what changed since. Keep calling while more is
+        true. A trashed item appears with deletedAt; an item purged for good
+        appears with removed=true. Works for every source; File Provider and
+        the Photos app use it to stay in sync.
+      parameters:
+        - { name: source, in: query, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, default: "0" } }
+        - { name: limit, in: query, schema: { type: integer, default: 1000, maximum: 1000 } }
+      responses:
+        "200":
+          description: A page of changes, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        seq: { type: integer, format: int64 }
+                        removed: { type: boolean }
+                        file: { $ref: "#/components/schemas/File" }
+                  cursor: { type: string }
+                  more: { type: boolean }
+        "400": { description: Unknown source or invalid cursor }
   /files/{id}/content:
     get:
       summary: Download file content (supports Range)
@@ -180,7 +268,13 @@ paths:
                 items: { $ref: "#/components/schemas/File" }
   /uploads:
     post:
-      summary: Start a resumable upload (used by the iPhone app)
+      summary: Start a resumable upload (iPhone app, and file saves to drive sources)
+      description: |
+        Device-upload sources dedupe by assetId. Drive sources create a new
+        file at path, or with fileId add a new version of that file. If the
+        file changed since baseSha256 (edited elsewhere) or was deleted, the
+        upload is saved as "<name> (conflict from <device> <time>).<ext>"
+        next to it, so no edit is lost.
       requestBody:
         required: true
         content:
@@ -195,6 +289,8 @@ paths:
                 sha256: { type: string }
                 assetId: { type: string, description: PhotoKit localIdentifier, used for dedupe }
                 created: { type: string, format: date-time }
+                fileId: { type: string, description: "Drive sources: replace this file (new version)" }
+                baseSha256: { type: string, description: "Drive sources: content the client last saw, for conflict detection" }
       responses:
         "201":
           description: Upload session created
@@ -210,8 +306,9 @@ paths:
             Either an existing session for the same item is resumed
             (uploadId and offset), or the item is already backed up
             with the same SHA-256 (status "exists", nothing to upload).
-        "400": { description: Not a device-upload source, invalid path, size, or sha256 }
-        "409": { description: Another device is uploading this item }
+        "400": { description: Not a device-upload or drive source, invalid path, size, or sha256 }
+        "404": { description: "Drive sources: fileId not found" }
+        "409": { description: "Another device is uploading this item, or (drive, no fileId) the path is taken" }
   /uploads/{id}:
     head:
       summary: Current offset of an upload (to resume)
@@ -329,7 +426,7 @@ components:
         source: { type: string }
         path: { type: string }
         name: { type: string }
-        isDir: { type: boolean, description: "Directories have no id; list them with ?path=" }
+        isDir: { type: boolean, description: "Folders created through the API have an id; folders implied by file paths do not. List them with ?path=" }
         size: { type: integer, format: int64 }
         modified: { type: string, format: date-time }
         sha256: { type: string }
