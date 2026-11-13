@@ -2,8 +2,8 @@ import Foundation
 import HomeBackupKit
 import Observation
 
-/// The paired server and the shared client. Settings are in UserDefaults,
-/// the device token in the Keychain.
+/// The paired server and the shared client. Settings are shared with the
+/// File Provider extension through SharedStore.
 @MainActor @Observable
 final class AppModel {
     static let shared = AppModel()
@@ -23,21 +23,17 @@ final class AppModel {
     var isPaired: Bool { client?.token != nil }
 
     init() {
-        let d = UserDefaults.standard
-        if let s = d.string(forKey: "serverURL"), let url = URL(string: s), let token = Keychain.get("token") {
-            let fp = d.string(forKey: "fingerprint")
-            serverURL = url
-            fingerprint = fp
-            client = HomeBackupClient(baseURL: url, fingerprint: fp, token: token)
+        if let s = SharedStore.settings, let c = SharedStore.makeClient() {
+            serverURL = s.serverURL
+            fingerprint = s.fingerprint
+            client = c
         }
     }
 
     /// Saves a completed pairing.
     func paired(url: URL, fingerprint: String?, client: HomeBackupClient) {
-        let d = UserDefaults.standard
-        d.set(url.absoluteString, forKey: "serverURL")
-        d.set(fingerprint, forKey: "fingerprint")
-        Keychain.set(client.token, for: "token")
+        SharedStore.settings = SharedStore.Settings(serverURL: url, fingerprint: fingerprint)
+        SharedStore.token = client.token
         serverURL = url
         self.fingerprint = fingerprint
         self.client = client
@@ -45,10 +41,8 @@ final class AppModel {
     }
 
     func unpair() {
-        let d = UserDefaults.standard
-        d.removeObject(forKey: "serverURL")
-        d.removeObject(forKey: "fingerprint")
-        Keychain.set(nil, for: "token")
+        SharedStore.clear()
+        FileProviderDomains.removeAll()
         client = nil
         serverURL = nil
         fingerprint = nil
@@ -60,6 +54,11 @@ final class AppModel {
         guard let client else { return }
         do {
             sources = try await client.sources()
+            if var s = SharedStore.settings {
+                s.writableSources = sources.filter(\.isWritable).map(\.id)
+                SharedStore.settings = s
+            }
+            await FileProviderDomains.sync(sources)
             if !sources.contains(where: { $0.id == backupSource }),
                let first = sources.first(where: { $0.type == "device-upload" }) {
                 backupSource = first.id

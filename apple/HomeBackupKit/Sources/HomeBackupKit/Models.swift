@@ -14,9 +14,12 @@ public struct FileItem: Codable, Hashable, Sendable, Identifiable {
     public var deletedAt: Date?
     /// "photo" or "video" when the server can make a thumbnail.
     public var media: String?
+    /// ID of the containing folder; empty at the top level and under
+    /// folders that are only implied by file paths.
+    public var parentId: String
 
     enum CodingKeys: String, CodingKey {
-        case id, source, path, name, isDir, size, modified, sha256, deletedAt, media
+        case id, source, path, name, isDir, size, modified, sha256, deletedAt, media, parentId
     }
 
     public init(from decoder: Decoder) throws {
@@ -31,6 +34,7 @@ public struct FileItem: Codable, Hashable, Sendable, Identifiable {
         sha256 = try c.decodeIfPresent(String.self, forKey: .sha256)
         deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
         media = try c.decodeIfPresent(String.self, forKey: .media)
+        parentId = try c.decodeIfPresent(String.self, forKey: .parentId) ?? ""
     }
 
     public var isPhoto: Bool { media == "photo" }

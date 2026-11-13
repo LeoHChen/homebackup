@@ -27,6 +27,11 @@ targets:
     sources: [HomeBackup]
     dependencies:
       - package: HomeBackupKit
+      - target: HomeBackupFiles
+    entitlements:
+      path: HomeBackup/HomeBackup.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup
@@ -34,3 +39,20 @@ targets:
         INFOPLIST_FILE: HomeBackup/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         GENERATE_INFOPLIST_FILE: NO
+  HomeBackupFiles:
+    # Files app integration (File Provider). The Mac app will reuse these sources.
+    type: app-extension
+    platform: iOS
+    sources: [FileProvider]
+    dependencies:
+      - package: HomeBackupKit
+    entitlements:
+      path: FileProvider/FileProvider.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.files
+        INFOPLIST_FILE: FileProvider/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"

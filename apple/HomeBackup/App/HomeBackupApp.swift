@@ -16,6 +16,7 @@ struct HomeBackupApp: App {
             switch newPhase {
             case .active:
                 BackupManager.shared.start()
+                FileProviderDomains.signalAll()
             case .background:
                 BackupManager.shared.scheduleBackground()
             default:

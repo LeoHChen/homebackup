@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -46,6 +47,42 @@ type FileJSON struct {
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
 	// Media is "photo" or "video" for files that have a thumbnail.
 	Media string `json:"media,omitempty"`
+	// ParentID is the ID of the containing folder, when that folder has
+	// one (empty at the top level and for folders implied by file paths).
+	ParentID string `json:"parentId,omitempty"`
+}
+
+// parentIDs looks up parent folder IDs, caching them for one request.
+type parentIDs struct {
+	s     *Server
+	r     *http.Request
+	cache map[string]string
+}
+
+func (s *Server) parents(r *http.Request) *parentIDs {
+	return &parentIDs{s: s, r: r, cache: map[string]string{}}
+}
+
+func (p *parentIDs) of(src, filePath string) string {
+	dir := path.Dir(filePath)
+	if dir == "." || dir == "/" || dir == "" {
+		return ""
+	}
+	key := src + "\x00" + dir
+	if v, ok := p.cache[key]; ok {
+		return v
+	}
+	v := ""
+	if f, err := p.s.Engine.Catalog.LiveFileByPath(p.r.Context(), src, dir); err == nil && f.IsDir {
+		v = strconv.FormatInt(f.ID, 10)
+	}
+	p.cache[key] = v
+	return v
+}
+
+func (p *parentIDs) fill(j FileJSON) FileJSON {
+	j.ParentID = p.of(j.Source, j.Path)
+	return j
 }
 
 // VersionJSON is the API representation of a previous version.
@@ -121,20 +158,21 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]FileJSON, 0, len(entries))
+	parent := s.parents(r).of(src, path.Join(dir, "x"))
 	for _, e := range entries {
-		if e.IsDir && e.File != nil {
-			items = append(items, fileJSON(*e.File))
-			continue
-		}
-		if e.IsDir {
+		var j FileJSON
+		switch {
+		case e.File != nil:
+			j = fileJSON(*e.File)
+		default: // folder implied by file paths
 			p := e.Name
 			if dir != "" {
 				p = dir + "/" + e.Name
 			}
-			items = append(items, FileJSON{Source: src, Path: p, Name: e.Name, IsDir: true})
-			continue
+			j = FileJSON{Source: src, Path: p, Name: e.Name, IsDir: true}
 		}
-		items = append(items, fileJSON(*e.File))
+		j.ParentID = parent
+		items = append(items, j)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -159,7 +197,7 @@ func (s *Server) fileByPathID(w http.ResponseWriter, r *http.Request) (catalog.F
 
 func (s *Server) getFile(w http.ResponseWriter, r *http.Request) {
 	if f, ok := s.fileByPathID(w, r); ok {
-		writeJSON(w, http.StatusOK, fileJSON(f))
+		writeJSON(w, http.StatusOK, s.parents(r).fill(fileJSON(f)))
 	}
 }
 
