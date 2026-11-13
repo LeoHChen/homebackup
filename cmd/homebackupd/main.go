@@ -28,6 +28,7 @@ import (
 	"github.com/LeoHChen/homebackup/internal/sources"
 	"github.com/LeoHChen/homebackup/internal/sources/gdrive"
 	"github.com/LeoHChen/homebackup/internal/store"
+	"github.com/LeoHChen/homebackup/internal/thumbs"
 	"github.com/LeoHChen/homebackup/internal/tlsutil"
 )
 
@@ -121,6 +122,9 @@ func run() error {
 		fingerprint = tlsutil.Fingerprint(*cert)
 	}
 
+	thumbGen := thumbs.New(filepath.Join(st.StateDir(), "thumbs"), log)
+	log.Info("thumbnails", "tools", thumbGen.Tools())
+
 	started := time.Now().UTC()
 	srv := &api.Server{
 		Version:         version,
@@ -128,6 +132,7 @@ func run() error {
 		Tokens:          tokens,
 		Log:             log,
 		Engine:          eng,
+		Thumbs:          thumbGen,
 		Status: func() api.Status {
 			s := api.Status{Version: version, Started: started, Root: st.Root()}
 			infos, err := eng.Sources(context.Background())
@@ -161,6 +166,7 @@ func run() error {
 		close(engDone)
 	}()
 	defer func() { <-engDone }()
+	go warmThumbnails(ctx, eng, thumbGen, log)
 
 	if cfg.BonjourEnabled() {
 		if _, portStr, err := net.SplitHostPort(cfg.Listen); err == nil {

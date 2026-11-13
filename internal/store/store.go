@@ -189,6 +189,63 @@ func (s *Store) Move(sourceID, from, to string) error {
 	return os.Rename(src, dst)
 }
 
+// MkdirAll creates a folder in the data directory.
+func (s *Store) MkdirAll(sourceID, rel string) error {
+	p, err := s.DataPath(sourceID, rel)
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(p, 0o750)
+}
+
+// MoveDir renames a folder in the data directory. The target must not exist.
+func (s *Store) MoveDir(sourceID, from, to string) error {
+	src, err := s.DataPath(sourceID, from)
+	if err != nil {
+		return err
+	}
+	dst, err := s.DataPath(sourceID, to)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return ErrExists
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
+// RemoveEmptyDirs removes a folder in the data directory if it contains
+// only (nested) empty folders. It fails if any file is left inside.
+func (s *Store) RemoveEmptyDirs(sourceID, rel string) error {
+	p, err := s.DataPath(sourceID, rel)
+	if err != nil {
+		return err
+	}
+	var files []string
+	err = filepath.WalkDir(p, func(q string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			files = append(files, q)
+		}
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(files) > 0 {
+		return fmt.Errorf("folder %s still contains %d files", rel, len(files))
+	}
+	return os.RemoveAll(p)
+}
+
 // RestoreVersion makes the file at versionPath the current version of rel.
 // The replaced current file (if any) becomes a version itself.
 func (s *Store) RestoreVersion(sourceID, rel, versionPath string) (PutResult, error) {

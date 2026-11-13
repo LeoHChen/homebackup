@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -37,6 +38,8 @@ CREATE TABLE IF NOT EXISTS files (
 	source_checksum TEXT NOT NULL DEFAULT '',
 	deleted_at      INTEGER,
 	trash_path      TEXT NOT NULL DEFAULT '',
+	is_dir          INTEGER NOT NULL DEFAULT 0,
+	seq             INTEGER NOT NULL DEFAULT 0,
 	UNIQUE (source, source_item_id)
 );
 CREATE INDEX IF NOT EXISTS files_dir ON files (source, dir) WHERE deleted_at IS NULL;
@@ -72,7 +75,46 @@ func Open(dbPath string) (*Catalog, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	if _, err := db.Exec(changesSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init change feed: %w", err)
+	}
 	return &Catalog{db: db}, nil
+}
+
+// migrate upgrades databases created by earlier versions.
+func migrate(db *sql.DB) error {
+	cols := map[string]bool{}
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('files')`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		cols[name] = true
+	}
+	rows.Close()
+	if !cols["is_dir"] {
+		if _, err := db.Exec(`ALTER TABLE files ADD COLUMN is_dir INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !cols["seq"] {
+		// Existing rows get sequence numbers in ID order.
+		if _, err := db.Exec(`ALTER TABLE files ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+			UPDATE files SET seq = id;`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database.
@@ -90,6 +132,9 @@ type File struct {
 	SourceChecksum string
 	DeletedAt      *time.Time
 	TrashPath      string
+	IsDir          bool
+	// Seq increases on every change; see Changes.
+	Seq int64
 }
 
 // Name returns the file's base name.
@@ -134,7 +179,7 @@ func dirOf(p string) string {
 	return d
 }
 
-const fileCols = `id, source, source_item_id, path, size, modified, sha256, source_checksum, deleted_at, trash_path`
+const fileCols = `id, source, source_item_id, path, size, modified, sha256, source_checksum, deleted_at, trash_path, is_dir, seq`
 
 type scanner interface{ Scan(...any) error }
 
@@ -142,7 +187,7 @@ func scanFile(r scanner) (File, error) {
 	var f File
 	var mod int64
 	var del sql.NullInt64
-	err := r.Scan(&f.ID, &f.Source, &f.SourceItemID, &f.Path, &f.Size, &mod, &f.SHA256, &f.SourceChecksum, &del, &f.TrashPath)
+	err := r.Scan(&f.ID, &f.Source, &f.SourceItemID, &f.Path, &f.Size, &mod, &f.SHA256, &f.SourceChecksum, &del, &f.TrashPath, &f.IsDir, &f.Seq)
 	if errors.Is(err, sql.ErrNoRows) {
 		return File{}, ErrNotFound
 	}
@@ -281,14 +326,34 @@ func (c *Catalog) ListDir(ctx context.Context, source, dir string) ([]Entry, err
 		return nil, err
 	}
 	defer rows.Close()
+	var files []Entry
+	folders := map[string]*File{}
 	for rows.Next() {
 		f, err := scanFile(rows)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Entry{Name: f.Name(), File: &f})
+		if f.IsDir {
+			folders[f.Name()] = &f
+			continue
+		}
+		files = append(files, Entry{Name: f.Name(), File: &f})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Merge explicit folder rows (which have IDs) with derived directories.
+	for i := range out {
+		if f, ok := folders[out[i].Name]; ok {
+			out[i].File = f
+			delete(folders, out[i].Name)
+		}
+	}
+	for name, f := range folders {
+		out = append(out, Entry{Name: name, IsDir: true, File: f})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return append(out, files...), nil
 }
 
 // upperBound returns the smallest string greater than every string with the

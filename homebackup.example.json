@@ -16,6 +16,7 @@
       "schedule": "24h",
       "options": { "inbox": "/Volumes/Backup/takeout-inbox" }
     },
-    { "id": "iphone", "type": "device-upload" }
+    { "id": "iphone", "type": "device-upload" },
+    { "id": "files", "type": "drive" }
   ]
 }
