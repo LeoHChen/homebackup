@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func TestStatusRequiresToken(t *testing.T) {
 }
 
 func TestStaticTokensIgnoresEmpty(t *testing.T) {
-	if (StaticTokens{""}).Valid("") {
+	if _, ok := (StaticTokens{""}).Authenticate(context.Background(), ""); ok {
 		t.Fatal("empty token must never be valid")
 	}
 }

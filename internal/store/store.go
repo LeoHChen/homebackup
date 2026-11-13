@@ -56,6 +56,9 @@ func Open(root string) (*Store, error) {
 // Root returns the store root directory.
 func (s *Store) Root() string { return s.root }
 
+// TmpDir returns the directory for in-progress writes such as uploads.
+func (s *Store) TmpDir() string { return filepath.Join(s.root, dirTmp) }
+
 // StateDir returns the directory for the catalog database.
 func (s *Store) StateDir() string { return filepath.Join(s.root, dirState) }
 

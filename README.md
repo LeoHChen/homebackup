@@ -24,11 +24,28 @@ make test
 
 ```sh
 cp homebackup.example.json homebackup.json   # edit "root"
-HOMEBACKUP_TOKEN=$(openssl rand -hex 32) ./bin/homebackupd-darwin-arm64 -config homebackup.json
+./bin/homebackupd-darwin-arm64 -config homebackup.json
 curl http://localhost:8420/api/v1/health
 ```
 
-`HOMEBACKUP_TOKEN` is a temporary single-token auth until device pairing lands.
+### Pair a device
+
+```sh
+./bin/homebackupd-darwin-arm64 -config homebackup.json pair
+# Pairing code: 482 913 (valid for 10 minutes)
+```
+
+Enter the code in the iPhone or Mac app (or `POST /api/v1/pair`). Each device
+gets its own token, which can be revoked with `DELETE /api/v1/devices/{id}`.
+For scripts, you can also set an admin token with `HOMEBACKUP_TOKEN`.
+
+### Device uploads
+
+A `device-upload` source (e.g. `"iphone"`) receives files pushed by the apps
+through the resumable upload API (`/api/v1/uploads`): create a session,
+send chunks with `Upload-Offset`, then complete; the server verifies the
+SHA-256. Interrupted uploads resume where they stopped; unfinished sessions
+are removed after 7 days.
 
 ## Google Drive setup
 

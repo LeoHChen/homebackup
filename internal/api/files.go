@@ -23,6 +23,8 @@ func (s *Server) fileRoutes(mux *http.ServeMux) {
 	h("GET /api/v1/files/{id}/versions", s.fileVersions)
 	h("POST /api/v1/files/{id}/restore", s.restoreFile)
 	h("GET /api/v1/trash", s.listTrash)
+	s.deviceRoutes(mux)
+	s.uploadRoutes(mux)
 }
 
 // FileJSON is the API representation of a file or directory.

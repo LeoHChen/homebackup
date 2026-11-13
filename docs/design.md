@@ -204,7 +204,7 @@ A single `homebackup.json` (path via `-config`), e.g.:
 ## 8. Roadmap
 
 1. **Design and setup** (done): design, API spec, Go skeleton, CI.
-2. **Server v1**: catalog, sync engine, file API, gdrive source, Takeout importer (done); pairing and uploads (next).
+2. **Server v1** (done): catalog, sync engine, file API, gdrive source, Takeout importer, device pairing and resumable uploads.
 3. **Apple apps**: iPhone photo backup, Mac menu bar app, icloud-local.
 4. **Local primary**: encrypted off-site push, scrub, alerts.
 

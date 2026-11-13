@@ -10,6 +10,7 @@ import (
 
 	"github.com/LeoHChen/homebackup/internal/config"
 	"github.com/LeoHChen/homebackup/internal/source"
+	"github.com/LeoHChen/homebackup/internal/sources/device"
 	"github.com/LeoHChen/homebackup/internal/sources/gdrive"
 	"github.com/LeoHChen/homebackup/internal/sources/takeout"
 )
@@ -55,7 +56,9 @@ func New(ctx context.Context, c config.Source, stateDir string, log *slog.Logger
 		})
 	case "gphotos-takeout":
 		return takeout.New(c.ID, c.Options["inbox"], log)
-	case "device-upload", "icloud-local":
+	case "device-upload":
+		return device.New(c.ID), nil
+	case "icloud-local":
 		return nil, ErrNotImplemented
 	default:
 		return nil, fmt.Errorf("unknown source type %q", c.Type)
