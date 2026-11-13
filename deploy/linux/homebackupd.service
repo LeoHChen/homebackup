@@ -1,0 +1,25 @@
+# systemd service for homebackupd (Linux, e.g. Raspberry Pi OS or Ubuntu).
+# Install:
+#   sudo useradd --system --create-home --home-dir /var/lib/homebackup homebackup
+#   sudo install -m 0755 homebackupd /usr/local/bin/homebackupd
+#   sudo install -d -o homebackup /etc/homebackup
+#   sudo cp homebackup.example.json /etc/homebackup/homebackup.json   # edit root, sources
+#   sudo cp homebackupd.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homebackupd
+#   journalctl -u homebackupd -f
+[Unit]
+Description=homebackup server
+Wants=network-online.target
+After=network-online.target local-fs.target
+
+[Service]
+User=homebackup
+ExecStart=/usr/local/bin/homebackupd -config /etc/homebackup/homebackup.json
+Restart=always
+# If the backup drive is not mounted the server exits; retry every minute.
+RestartSec=60
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
