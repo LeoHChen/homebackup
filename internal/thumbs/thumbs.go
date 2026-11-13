@@ -105,11 +105,28 @@ func New(dir string, log *slog.Logger) *Generator {
 		if (t == "sips" || t == "qlmanage") && runtime.GOOS != "darwin" {
 			continue
 		}
-		if p, err := exec.LookPath(t); err == nil {
+		if p := findTool(t); p != "" {
 			g.tools[t] = p
 		}
 	}
 	return g
+}
+
+// extraToolDirs are searched after PATH: services started by launchd or
+// systemd get a minimal PATH without Homebrew or /usr/local.
+var extraToolDirs = []string{"/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/snap/bin"}
+
+func findTool(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	for _, d := range extraToolDirs {
+		p := filepath.Join(d, name)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
 }
 
 // Tools lists the external tools found, for logging.

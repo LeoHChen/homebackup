@@ -187,3 +187,21 @@ func TestVideoWithFFmpeg(t *testing.T) {
 		t.Fatalf("work dirs left: %v", left)
 	}
 }
+
+func TestFindToolOutsidePATH(t *testing.T) {
+	dir := t.TempDir()
+	tool := filepath.Join(dir, "fake-ffmpeg")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := extraToolDirs
+	extraToolDirs = []string{dir}
+	defer func() { extraToolDirs = old }()
+	t.Setenv("PATH", "/nonexistent")
+	if got := findTool("fake-ffmpeg"); got != tool {
+		t.Fatalf("findTool = %q, want %q", got, tool)
+	}
+	if got := findTool("missing-tool"); got != "" {
+		t.Fatalf("missing tool found at %q", got)
+	}
+}
