@@ -30,6 +30,27 @@ curl http://localhost:8420/api/v1/health
 
 `HOMEBACKUP_TOKEN` is a temporary single-token auth until device pairing lands.
 
+## Google Drive setup
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
+   project and enable the **Google Drive API**.
+2. Configure the **OAuth consent screen** (External) and add your Google
+   account as a test user.
+3. Under **Credentials**, create an **OAuth client ID** of type **Desktop app**
+   and download the JSON file. Keep it private.
+4. Point `options.credentials` of the `gdrive` source at that file, then sign in once:
+
+   ```sh
+   ./bin/homebackupd-darwin-arm64 -config homebackup.json auth gdrive
+   ```
+
+   The token is saved (mode 0600) in `<root>/state/gdrive-token.json` and
+   refreshed automatically. Access is read-only (`drive.readonly`).
+
+Google Docs, Sheets, Slides, and Drawings are saved as `.docx`, `.xlsx`,
+`.pptx`, and `.pdf`. Forms, Sites, and shortcuts are skipped. Files larger than
+Google's 10 MB export limit are skipped with a warning.
+
 ## Layout
 
 ```
@@ -37,7 +58,10 @@ cmd/homebackupd/   server daemon
 internal/api/      HTTP API
 internal/config/   configuration file
 internal/store/    on-disk layout: data, versions, trash
-internal/source/   source interface (gdrive, gphotos-takeout, ...)
+internal/source/   source interface
+internal/sources/  source implementations (gdrive, ...)
+internal/catalog/  SQLite index of files, versions, trash, sync state
+internal/engine/   sync engine, retention janitor, scheduler
 api/openapi.yaml   API specification
 docs/design.md     design document
 ```
