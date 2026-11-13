@@ -19,7 +19,7 @@ struct FilesView: View {
         }
     }
 
-    static func title(_ s: SourceStatus) -> String {
+    nonisolated static func title(_ s: SourceStatus) -> String {
         switch s.type {
         case "drive": return "My Files"
         case "gdrive": return "Google Drive backup"
