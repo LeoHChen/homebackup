@@ -202,6 +202,9 @@ to revoke one, use `DELETE /api/v1/devices/{id}`.
 The Mac app shows each source in Finder's sidebar. **My Files** is writable.
 The Google backups are read-only.
 
+For a step-by-step install on another Mac, including checks you can hand to
+an assistant, see [docs/mac-client-setup.md](docs/mac-client-setup.md).
+
 - **Download:** `HomeBackup-<version>-macOS.zip` from the release, if one is
   attached. Unzip it, move **HomeBackup** to Applications, and open it. The
   icon appears in the menu bar.
