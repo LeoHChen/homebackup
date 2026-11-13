@@ -10,7 +10,7 @@ Claude Code session on that Mac.
 Fill these in for your server. Every later step uses these values.
 
 ```sh
-HB_VERSION=0.1.0                              # release to install
+HB_VERSION=0.2.0                              # release to install
 HB_SERVER=https://homeserver.local:8420       # server address: Bonjour host name or LAN IP, port from "listen"
 HB_SERVER_NAME="homebackup on homeserver"     # name the app lists for your server
 HB_KEY="XXXX XXXX XXXX XXXX"                  # server key, printed by `homebackupd pair` and in the server log

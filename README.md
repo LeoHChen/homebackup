@@ -18,7 +18,7 @@ your own Mac mini, Raspberry Pi, or PC, and comes with iPhone and Mac apps.
   backups, devices, photos, trash and history, recent activity, and hands
   out pairing codes for new devices.
 
-Status: early (v0.1.0). Keep your cloud accounts while you try it.
+Status: early (v0.2.0). Keep your cloud accounts while you try it.
 
 ## Contents
 
@@ -71,7 +71,7 @@ Download the archive for your server from the
 For example, on a Mac with Apple silicon:
 
 ```sh
-V=v0.1.0
+V=v0.2.0
 curl -LO https://github.com/LeoHChen/homebackup/releases/download/$V/homebackupd-$V-darwin-arm64.tar.gz
 curl -LO https://github.com/LeoHChen/homebackup/releases/download/$V/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
@@ -179,7 +179,7 @@ Check from another computer on the network:
 
 ```sh
 curl -k https://<server-name>.local:8420/api/v1/health
-# {"certFingerprint":"7f3c09d2...","status":"ok","version":"v0.1.0"}
+# {"certFingerprint":"7f3c09d2...","status":"ok","version":"v0.2.0"}
 ```
 
 To use another certificate (for example from `tailscale cert`), set
