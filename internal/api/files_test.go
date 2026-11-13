@@ -36,6 +36,7 @@ func (m *memSource) Open(_ context.Context, it source.Item) (io.ReadCloser, erro
 
 type fileEnv struct {
 	ts  *httptest.Server
+	srv *Server
 	eng *engine.Engine
 	src *memSource
 }
@@ -57,7 +58,7 @@ func newFileEnv(t *testing.T) *fileEnv {
 	s := &Server{Version: "test", Tokens: StaticTokens{"tok"}, Engine: eng, Status: func() Status { return Status{} }}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &fileEnv{ts: ts, eng: eng, src: src}
+	return &fileEnv{ts: ts, srv: s, eng: eng, src: src}
 }
 
 func (e *fileEnv) sync(t *testing.T, chs ...source.Change) {

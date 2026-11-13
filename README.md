@@ -61,6 +61,16 @@ back the returned cursor. An edit made from a stale copy is never lost; it
 is saved next to the file as `name (conflict from <device> <time>).ext`.
 Every change keeps the previous version and the trash, as for other sources.
 
+### Thumbnails
+
+`GET /api/v1/files/{id}/thumbnail?size=small|large` returns a JPEG
+(256 or 1024 px). Files with `"media": "photo"` or `"video"` have one.
+Small thumbnails are made in the background after each sync and cached in
+`<root>/state/thumbs` by content hash. JPEG, PNG, GIF, WebP, BMP, and TIFF
+work everywhere; HEIC, RAW, and video use `sips`/`qlmanage` (built into
+macOS), `heif-convert`, or `ffmpeg` (`brew install ffmpeg` or
+`apt install ffmpeg libheif-examples`). The startup log lists the tools found.
+
 ## Run as a service on macOS
 
 ```sh

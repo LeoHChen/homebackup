@@ -11,6 +11,7 @@ import (
 	"github.com/LeoHChen/homebackup/internal/catalog"
 	"github.com/LeoHChen/homebackup/internal/engine"
 	"github.com/LeoHChen/homebackup/internal/store"
+	"github.com/LeoHChen/homebackup/internal/thumbs"
 )
 
 func (s *Server) fileRoutes(mux *http.ServeMux) {
@@ -20,6 +21,7 @@ func (s *Server) fileRoutes(mux *http.ServeMux) {
 	h("GET /api/v1/files", s.listFiles)
 	h("GET /api/v1/files/{id}", s.getFile)
 	h("GET /api/v1/files/{id}/content", s.fileContent)
+	h("GET /api/v1/files/{id}/thumbnail", s.fileThumbnail)
 	h("GET /api/v1/files/{id}/versions", s.fileVersions)
 	h("POST /api/v1/files/{id}/restore", s.restoreFile)
 	h("GET /api/v1/trash", s.listTrash)
@@ -42,6 +44,8 @@ type FileJSON struct {
 	Modified  *time.Time `json:"modified,omitempty"`
 	SHA256    string     `json:"sha256,omitempty"`
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	// Media is "photo" or "video" for files that have a thumbnail.
+	Media string `json:"media,omitempty"`
 }
 
 // VersionJSON is the API representation of a previous version.
@@ -65,10 +69,14 @@ type SourceJSON struct {
 
 func fileJSON(f catalog.File) FileJSON {
 	m := f.Modified
-	return FileJSON{
+	j := FileJSON{
 		ID: strconv.FormatInt(f.ID, 10), Source: f.Source, Path: f.Path, Name: f.Name(),
 		Size: f.Size, Modified: &m, SHA256: f.SHA256, DeletedAt: f.DeletedAt, IsDir: f.IsDir,
 	}
+	if !f.IsDir {
+		j.Media = thumbs.Kind(f.Name())
+	}
+	return j
 }
 
 func (s *Server) listSources(w http.ResponseWriter, r *http.Request) {
