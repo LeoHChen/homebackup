@@ -276,6 +276,10 @@ func disambiguate(p, itemID string) string {
 	return dir + strings.TrimSuffix(name, ext) + tag + ext
 }
 
+func sourceItem(f catalog.File) source.Item {
+	return source.Item{SourceID: f.SourceItemID, Path: f.Path}
+}
+
 func (e *Engine) applyDelete(ctx context.Context, sourceID string, it source.Item) error {
 	f, err := e.Catalog.FileBySourceItem(ctx, sourceID, it.SourceID)
 	if errors.Is(err, catalog.ErrNotFound) || (err == nil && f.DeletedAt != nil) {
@@ -335,6 +339,11 @@ func (e *Engine) Put(ctx context.Context, sourceID string, it source.Item, r io.
 		return err
 	}
 	it.Path = p
+	if typ, _ := e.SourceType(sourceID); typ == WritableType {
+		if err := e.ensureParents(ctx, sourceID, it.Path); err != nil {
+			return err
+		}
+	}
 	res, err := e.Store.Put(sourceID, it.Path, r)
 	if err != nil {
 		return err

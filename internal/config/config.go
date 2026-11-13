@@ -100,6 +100,7 @@ var KnownSourceTypes = map[string]bool{
 	"gdrive":          true,
 	"gphotos-takeout": true,
 	"device-upload":   true,
+	"drive":           true,
 	"icloud-local":    true,
 }
 

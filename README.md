@@ -47,6 +47,20 @@ send chunks with `Upload-Offset`, then complete; the server verifies the
 SHA-256. Interrupted uploads resume where they stopped; unfinished sessions
 are removed after 7 days.
 
+### My Files (drive source)
+
+A `drive` source (e.g. `{"id": "files", "type": "drive"}`) is a writable
+drive where the home server holds the primary copy, like Google Drive or
+iCloud Drive. Apps create folders (`POST /api/v1/folders`), upload files and
+new versions through the upload API (with `fileId` and `baseSha256`),
+rename or move (`PATCH /api/v1/files/{id}`), and delete to the trash
+(`DELETE /api/v1/files/{id}`). Sources that mirror Google are read-only.
+
+Sync clients follow `GET /api/v1/changes`: start at cursor 0, then pass
+back the returned cursor. An edit made from a stale copy is never lost; it
+is saved next to the file as `name (conflict from <device> <time>).ext`.
+Every change keeps the previous version and the trash, as for other sources.
+
 ## Run as a service on macOS
 
 ```sh
