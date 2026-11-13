@@ -59,7 +59,11 @@ public enum SharedStore {
         var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                 kSecAttrService as String: service,
                                 kSecAttrAccount as String: tokenAccount]
-        if group { q[kSecAttrAccessGroup as String] = appGroup }
+        if group {
+            q[kSecAttrAccessGroup as String] = appGroup
+            // macOS: access groups need the data protection keychain.
+            q[kSecUseDataProtectionKeychain as String] = true
+        }
         return q
     }
 

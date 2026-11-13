@@ -75,6 +75,17 @@ public struct SourceStatus: Codable, Hashable, Sendable, Identifiable {
 
     /// Sources the apps can write to (My Files).
     public var isWritable: Bool { type == "drive" }
+
+    /// Name shown in the apps, Files, and Finder.
+    public var displayName: String {
+        switch type {
+        case "drive": return "My Files"
+        case "gdrive": return "Google Drive backup"
+        case "gphotos-takeout": return "Google Photos backup"
+        case "device-upload": return "Device photos (\(id))"
+        default: return id
+        }
+    }
 }
 
 public struct Health: Codable, Sendable {

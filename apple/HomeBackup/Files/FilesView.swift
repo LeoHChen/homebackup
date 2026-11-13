@@ -19,15 +19,7 @@ struct FilesView: View {
         }
     }
 
-    nonisolated static func title(_ s: SourceStatus) -> String {
-        switch s.type {
-        case "drive": return "My Files"
-        case "gdrive": return "Google Drive backup"
-        case "gphotos-takeout": return "Google Photos backup"
-        case "device-upload": return "Device photos (\(s.id))"
-        default: return s.id
-        }
-    }
+    nonisolated static func title(_ s: SourceStatus) -> String { s.displayName }
 }
 
 struct FolderRef: Hashable {
