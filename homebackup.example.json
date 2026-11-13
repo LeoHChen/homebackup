@@ -9,6 +9,11 @@
       "schedule": "1h",
       "options": { "credentials": "/Users/me/.config/homebackup/google-oauth-client.json" }
     },
-    { "id": "gphotos", "type": "gphotos-takeout" }
+    {
+      "id": "gphotos",
+      "type": "gphotos-takeout",
+      "schedule": "24h",
+      "options": { "inbox": "/Volumes/Backup/takeout-inbox" }
+    }
   ]
 }

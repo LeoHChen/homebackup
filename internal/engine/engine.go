@@ -334,6 +334,11 @@ func (e *Engine) Put(ctx context.Context, sourceID string, it source.Item, r io.
 			res.PreviousVersion = old.TrashPath
 		}
 	}
+	if !it.Modified.IsZero() {
+		if err := e.Store.SetModTime(sourceID, it.Path, it.Modified); err != nil {
+			e.Log.Warn("set modification time", "path", it.Path, "err", err)
+		}
+	}
 	if it.Size > 0 && res.Size != it.Size {
 		e.Log.Warn("size mismatch", "source", sourceID, "path", it.Path, "want", it.Size, "got", res.Size)
 	}

@@ -51,6 +51,21 @@ Google Docs, Sheets, Slides, and Drawings are saved as `.docx`, `.xlsx`,
 `.pptx`, and `.pdf`. Forms, Sites, and shortcuts are skipped. Files larger than
 Google's 10 MB export limit are skipped with a warning.
 
+## Google Photos import (Takeout)
+
+Google's Photos API no longer lets apps read your existing library, so the
+history comes from [Google Takeout](https://takeout.google.com/):
+
+1. Select only **Google Photos**, choose **.zip** and the largest file size.
+2. Put every downloaded part (`takeout-...-001.zip`, `-002.zip`, ...) in the
+   `inbox` folder of the `gphotos-takeout` source. Extracted folders work too.
+3. Run a sync (`POST /api/v1/sources/gphotos/sync`) or wait for the schedule.
+
+Photos are stored as `<year>/<month>/<name>` using the capture time from the
+Takeout metadata, with the file date set to the capture time. Photos repeated
+in albums, and photos already imported from an earlier Takeout, are stored
+once. Imported archives are remembered; you can delete them afterwards.
+
 ## Layout
 
 ```

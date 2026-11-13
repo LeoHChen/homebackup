@@ -11,6 +11,7 @@ import (
 	"github.com/LeoHChen/homebackup/internal/config"
 	"github.com/LeoHChen/homebackup/internal/source"
 	"github.com/LeoHChen/homebackup/internal/sources/gdrive"
+	"github.com/LeoHChen/homebackup/internal/sources/takeout"
 )
 
 // ErrNotImplemented is returned for source types that are planned but not built yet.
@@ -52,7 +53,9 @@ func New(ctx context.Context, c config.Source, stateDir string, log *slog.Logger
 			StateFile: filepath.Join(stateDir, c.ID+"-folders.json"),
 			Log:       log,
 		})
-	case "gphotos-takeout", "device-upload", "icloud-local":
+	case "gphotos-takeout":
+		return takeout.New(c.ID, c.Options["inbox"], log)
+	case "device-upload", "icloud-local":
 		return nil, ErrNotImplemented
 	default:
 		return nil, fmt.Errorf("unknown source type %q", c.Type)

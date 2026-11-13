@@ -147,6 +147,16 @@ func (s *Store) moveToVersions(sourceID, rel, current string) (string, error) {
 	return dst, os.Rename(current, dst)
 }
 
+// SetModTime sets the modification time of the current file, so Finder and
+// other file browsers sort backups by their original date.
+func (s *Store) SetModTime(sourceID, rel string, t time.Time) error {
+	p, err := s.DataPath(sourceID, rel)
+	if err != nil {
+		return err
+	}
+	return os.Chtimes(p, t, t)
+}
+
 // Move renames the current file of a source item, e.g. after a rename at the source.
 func (s *Store) Move(sourceID, from, to string) error {
 	src, err := s.DataPath(sourceID, from)
