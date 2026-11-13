@@ -56,3 +56,45 @@ targets:
         INFOPLIST_FILE: FileProvider/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1,2"
+  HomeBackupMac:
+    # Menu bar app; shows each source in Finder through HomeBackupMacFiles.
+    type: application
+    platform: macOS
+    sources: [HomeBackupMac]
+    dependencies:
+      - package: HomeBackupKit
+      - target: HomeBackupMacFiles
+    entitlements:
+      path: HomeBackupMac/HomeBackupMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.mac
+        PRODUCT_NAME: HomeBackup
+        INFOPLIST_FILE: HomeBackupMac/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: YES
+  HomeBackupMacFiles:
+    # Finder integration (File Provider), same sources as the iOS extension.
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: FileProvider
+        excludes: ["*.plist", "*.entitlements"]
+    dependencies:
+      - package: HomeBackupKit
+    entitlements:
+      path: FileProvider/FileProviderMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups: [group.com.github.leohchen.homebackup]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.github.leohchen.homebackup.mac.files
+        INFOPLIST_FILE: FileProvider/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: YES
