@@ -9,3 +9,7 @@ homebackup.json
 .swiftpm/
 xcuserdata/
 DerivedData/
+
+# Apple
+apple/Local.xcconfig
+apple/*.xcodeproj/
